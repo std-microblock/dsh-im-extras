@@ -88,7 +88,9 @@ export function apply(ctx: Context, config: SummaryConfig): void {
   // controls carry `dsh:auth-stop:` so unauthorized group members cannot cancel an exclusive session. A turn somebody
   // stopped from the card closes with a footer naming them.
   ctx.on('im/button', (event) => {
-    const target = stopTargetOf(event.id)
+    // A QQ client may report a keyboard click without the button id; the id then rides in the button data.
+    const id = stopTargetOf(event.id) === undefined && typeof event.data === 'string' ? event.data : event.id
+    const target = stopTargetOf(id)
     if (target === undefined) return
     const record = ctx.im.sessions.get(target.sessionId)
     if (record === undefined || !record.bindings.some(binding => binding.chat === event.chat.key)) return
@@ -101,7 +103,7 @@ export function apply(ctx: Context, config: SummaryConfig): void {
         return
       }
     }
-    renderer.stoppedBy(event)
+    renderer.stoppedBy({ id, user: event.user })
     void ctx.im.sessions.stop(record.sessionId).catch((error: unknown) => {
       ctx.logger.warn('IM stop button could not stop session %s: %s', record.sessionId, error)
     })

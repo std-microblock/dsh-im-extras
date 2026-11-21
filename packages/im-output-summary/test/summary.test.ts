@@ -555,6 +555,13 @@ test('summary:stop and legacy dsh:stop clicks stop a session bound to the button
   await click(`${LEGACY_STOP_BUTTON_PREFIX}${SESSION}`)
   assert.deepEqual(stopped, [SESSION, SESSION])
 
+  // A QQ client that omits the button id reports the id's first segment and carries the whole id in the data.
+  for (const fn of listeners.get('im/button') ?? []) {
+    await fn({ id: 'summary', data: `${STOP_BUTTON_PREFIX}${SESSION}`, chat: { key: CHAT }, user: { id: 'ou_1', name: '甲' } })
+  }
+  await settled()
+  assert.deepEqual(stopped, [SESSION, SESSION, SESSION])
+
   failStop = true
   await click(`${STOP_BUTTON_PREFIX}${SESSION}`)
   assert.equal(warnings.length, 1)
