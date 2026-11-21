@@ -1,0 +1,19 @@
+{
+  "//": "Type checking for the browser half only; the shipped artifact is the esbuild bundle (scripts/build-client.mjs).",
+  "extends": ["../../tsconfig.harness.json"],
+  "compilerOptions": {
+    "target": "ES2023",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "allowImportingTsExtensions": true,
+    "types": []
+  },
+  "include": ["src/client/**/*.ts", "src/client/**/*.tsx", "src/protocol.ts"]
+}

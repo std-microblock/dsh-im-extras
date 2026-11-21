@@ -1,0 +1,51 @@
+{
+  "name": "dsh-im-panel",
+  "version": "0.1.0",
+  "description": "An operator panel for the DeepSeek Harness IM host inside the harness web GUI: deployment overview, hosted sessions, task workers, route rules, per-chat wake/reply modes and the chronicle, with a tab API other plugins extend.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./client": "./client/client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "client",
+    "scripts",
+    "README.md"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/std-microblock/dsh-im-extras.git",
+    "directory": "packages/im-panel"
+  },
+  "keywords": ["deepseek-harness", "dsh", "im", "panel", "admin"],
+  "dsh": {
+    "client": {
+      "platform": "web"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/build-client.mjs .",
+    "build:host": "tsc -p tsconfig.json",
+    "build:client": "node scripts/build-client.mjs .",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json",
+    "test": "node --experimental-transform-types --no-warnings --import ../../scripts/test-resolve.mjs --test --test-timeout=60000 \"test/**/*.test.ts\""
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "esbuild": "0.28.2"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "*"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/cordis": { "optional": true }
+  }
+}

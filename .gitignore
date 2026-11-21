@@ -4,7 +4,7 @@ node_modules/
 # packs a plugin (see `scripts/deploy.ps1` in the deployment repository), and a
 # committed `dist` only ever drifts from `src`.
 dist/
-packages/toc-agent/client/client.js
+packages/*/client/client.js
 
 # Generated per machine: points the plugins' `@deepseek-ai/*` imports at the
 # harness checkout this machine builds (see `scripts/harness-tsconfig.mjs`).

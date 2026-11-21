@@ -30,7 +30,29 @@ importers:
         specifier: 4.4.3
         version: 4.4.3
 
+  packages/im-dispatch:
+    dependencies:
+      '@tootallnate/quickjs-emscripten':
+        specifier: 0.23.0
+        version: 0.23.0
+      zod:
+        specifier: 4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@types/node':
+        specifier: ^26.6.4
+        version: 26.6.6
+
   packages/im-output-summary: {}
+
+  packages/im-panel:
+    devDependencies:
+      '@types/node':
+        specifier: ^26.6.4
+        version: 26.6.6
+      esbuild:
+        specifier: 0.28.2
+        version: 0.28.2
 
   packages/im-polish:
     devDependencies:
@@ -214,6 +236,9 @@ packages:
     cpu: [x64]
     os: [win32]
 
+  '@tootallnate/quickjs-emscripten@0.23.0':
+    resolution: {integrity: sha512-C5Mc6rdnsaJDjO3UpGW/CQTHtCKaYlScZTly4JIu97Jxo/odCiH0ITnDXSJPTOrEKk/ycSZ0AOgTmkDtkOsvIA==}
+
   '@types/node@26.6.6':
     resolution: {integrity: sha512-MzQj+8Kx3XI40OmUAE6Qoh58ZMNstNNMwn2nfd3qWsfe7nDNSqJNzes4njhz6AHwrSHOffSLwXU6yb474Q4aog==}
 
@@ -315,6 +340,8 @@ snapshots:
 
   '@esbuild/win32-x64@0.28.2':
     optional: true
+
+  '@tootallnate/quickjs-emscripten@0.23.0': {}
 
   '@types/node@26.6.6':
     dependencies:
