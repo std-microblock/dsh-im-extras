@@ -1,0 +1,70 @@
+{
+  "name": "dsh-im-stickers",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Sticker library for dsh-im: upload or collect chat images as stickers, vision-tagged and described, picked by weight with recent-use decay, sent by tool or appended when the bot finishes talking.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "license": "MIT",
+  "author": "MicroBlock",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --experimental-transform-types --disable-warning=ExperimentalWarning --import ../../scripts/test-resolve.mjs --test --test-timeout=60000 \"test/**/*.test.ts\""
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "*",
+    "@deepseek-ai/cordis-plugin-im-core": "*",
+    "@deepseek-ai/dsh-im": "*",
+    "@deepseek-ai/dsh-llm": "*",
+    "@deepseek-ai/dsh-storage-domain": "*",
+    "@deepseek-ai/dsh-system-prompt": "*",
+    "@deepseek-ai/dsh-tools": "*",
+    "@deepseek-ai/dsh-timeout": "*",
+    "@deepseek-ai/schemastery": "*"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/cordis": {
+      "optional": true
+    },
+    "@deepseek-ai/cordis-plugin-im-core": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-im": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-llm": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-storage-domain": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-system-prompt": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-tools": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-timeout": {
+      "optional": true
+    },
+    "@deepseek-ai/schemastery": {
+      "optional": true
+    }
+  }
+}
