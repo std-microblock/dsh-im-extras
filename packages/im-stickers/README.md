@@ -71,6 +71,10 @@ middle and last frame plus a 30-frame contact sheet. Without it, the size is rea
 shows the original, and the classifier receives the original bytes when the attachment store accepts the format
 (PNG, JPEG, WebP, GIF) — an animation is then judged from what the model makes of the file.
 
+## Panel tab
+
+With [dsh-im-panel](../im-panel/README.md) mounted, the plugin adds the **表情库** tab (id `stickers`, order 60): a thumbnail grid filtered by type, untagged, enabled state and text, ordered by weight, uses, last use or age; inline editing of description, types, weight and the enabled switch; upload; collecting a chat picture by its media id; classification jobs with progress; batch enable / disable / weight / add or remove type / re-classify / delete; a test send; and the per-chat automatic-sticker switch and chance. The host half (`src/panel.ts`) answers every request of `/api/im-panel/tab?id=stickers` itself (images and multipart uploads included); the browser half is `src/client/index.tsx`, bundled to `client/client.js` by `pnpm run build:client`. Neither half depends on the panel package.
+
 ## API
 
 `ctx.imStickers` (`ImStickersService`): `list(filter)`, `get(id)`, `stats()`, `types()`, `file(id, thumb?)`,
