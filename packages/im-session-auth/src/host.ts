@@ -391,7 +391,7 @@ export class SessionAuthHost implements ImSessionAuth {
     const record = this.requireTaskRecord(agent)
     const normalized = users.map(cleanUser).filter(u => u.id.length > 0)
     if (normalized.length === 0) {
-      throw new ImError('capacity', 'Provide at least one valid user open_id to grant session access.')
+      throw new ImError('capacity', 'Provide at least one valid platform user id to grant session access.')
     }
     const actor = this.requireHumanActor(record.sessionId)
     const now = Date.now()
@@ -425,7 +425,7 @@ export class SessionAuthHost implements ImSessionAuth {
     const record = this.requireTaskRecord(agent)
     const targets = new Set(userIds.map(id => id.trim()).filter(Boolean))
     if (targets.size === 0) {
-      throw new ImError('capacity', 'Provide at least one user open_id to revoke.')
+      throw new ImError('capacity', 'Provide at least one platform user id to revoke.')
     }
     const actor = this.requireHumanActor(record.sessionId)
     const auth = this.sessions.get(record.sessionId)
@@ -587,7 +587,7 @@ export class SessionAuthHost implements ImSessionAuth {
       '你可以在回复中使用 ```satori-tsx 内联卡片或 `im_send_card` 发送预制组件 `<AuthRequest />` 来向用户申请会话独占或能力授权：',
       '- 纯独占申请：`export default <AuthRequest reason="…" />`',
       '- 申请一项或多项能力：`export default <AuthRequest capabilities={["feishu-project"]} reason="…" />`',
-      '- 一旦会话被独占，仅独占者及被显式授权的协作者可与该会话交互；当独占者或协作者在群里显式要求把权限分享给某人（例如 `@bot 给 @张三 我这个session的权限`）时，从消息提及或 `im_members` 取得其 `ou_...` open_id 并调用 `grant_session_access`；移出协作者用 `revoke_session_access`（不可移出独占者本人）；查看当前状态用 `get_session_access`。',
+      '- 一旦会话被独占，仅独占者及被显式授权的协作者可与该会话交互；当独占者或协作者在群里显式要求把权限分享给某人（例如 `@bot 给 @张三 我这个session的权限`）时，从消息提及或 `im_members` 取得其平台用户 id 并调用 `grant_session_access`；移出协作者用 `revoke_session_access`（不可移出独占者本人）；查看当前状态用 `get_session_access`。',
     ]
 
     if (acl?.exclusive) {

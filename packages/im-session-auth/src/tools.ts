@@ -91,7 +91,7 @@ export function applyTools(tools: Context['tools'], host: SessionAuthHost): () =
     description: 'Grant one or more users interactive access to this exclusive task session (and share its active '
       + 'capabilities with them). Only callable during a turn triggered by an already-authorized human member '
       + '(or the requester if the session is not exclusive yet, which also claims exclusivity for them). '
-      + 'Pass each user\'s Feishu open_id (ou_...) from message mentions or im_members.',
+      + 'Pass each user\'s platform user id (from message mentions or im_members).',
     parameters: {
       users: {
         type: 'array',
@@ -101,7 +101,7 @@ export function applyTools(tools: Context['tools'], host: SessionAuthHost): () =
           type: 'object',
           additionalProperties: false,
           properties: {
-            id: { type: 'string', required: true, description: 'Platform user open_id (e.g. ou_...).' },
+            id: { type: 'string', required: true, description: 'Platform user id, as message mentions and im_members report it.' },
             name: { type: 'string', description: 'Optional display name.' },
           },
         },
@@ -118,7 +118,7 @@ export function applyTools(tools: Context['tools'], host: SessionAuthHost): () =
       userIds: {
         type: 'array',
         required: true,
-        description: 'Platform user open_ids (ou_...) of collaborators to remove.',
+        description: 'Platform user ids of the collaborators to remove.',
         items: { type: 'string' },
       },
     } satisfies ParameterSchemaSpec,
