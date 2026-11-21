@@ -23,6 +23,7 @@ import { Config, type PolishConfig } from './config.ts'
 import type { ChatOverride, PolishRecord } from './domain.ts'
 import { PolishHost, type PolishRecordFilter, type PolishStats } from './host.ts'
 import { complete, type Complete } from './llm.ts'
+import { applyPanel } from './panel.ts'
 import type { PolishOutcome } from './polisher.ts'
 
 export {
@@ -35,6 +36,7 @@ export { imPolishDomain, type ChatOverride, type ImPolishDomain, type PolishReco
 export { PolishHost, type PolishHostDeps, type PolishRecordFilter, type PolishStats } from './host.ts'
 export { complete, COMPLETION_TIMEOUT_CODE, type Complete, type CompletionRequest } from './llm.ts'
 export { decide, repeatMessage, type PolishAttempt, type PolishInput, type PolishOutcome } from './polisher.ts'
+export { applyPanel, POLISH_TAB, polishTab, type PanelHost, type PanelTabDefinition } from './panel.ts'
 export { polishSystem, polishUser, type SystemPromptInput, type UserPromptInput } from './prompt.ts'
 export { diceSimilarity, mostSimilar, similarityKey, type SimilarMatch } from './similarity.ts'
 export { acceptStyled, checkStyled, pickSubStyles, readAnswer, type PolishAnswer } from './style.ts'
@@ -87,6 +89,8 @@ export class ImPolishService extends Service {
       }
       return next()
     })
+    // The operator panel is optional: its tab appears when `dsh-im-panel` is mounted.
+    applyPanel(this.home, this)
   }
 
   /** The configuration in force. */
