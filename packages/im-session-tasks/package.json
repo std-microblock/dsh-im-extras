@@ -2,7 +2,7 @@
   "name": "dsh-im-session-tasks",
   "version": "0.1.0",
   "private": true,
-  "description": "Task sessions for the toC bot's IM: a task per topic with its own session, its material, and its tools.",
+  "description": "Task sessions for dsh-im chats: a task per topic with its own session, its material, and its tools.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

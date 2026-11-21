@@ -4,7 +4,7 @@ The task registry behind dispatch: a task per topic, its own worker session, the
 the `task_*` tools both sides use.
 
 The plugin provides `ctx.imTasks` and opens the durable `im_tasks` storage domain. It routes no inbound message by
-itself — a strategy (this deployment's dispatcher, see `packages/toc-agent`) starts tasks and hands further messages to
+itself — a strategy (a dispatcher plugin such as `dsh-im-dispatch`) starts tasks and hands further messages to
 a worker:
 
 ```ts

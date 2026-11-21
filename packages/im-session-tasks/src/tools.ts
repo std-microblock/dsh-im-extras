@@ -9,9 +9,7 @@
  */
 import type { Context } from '@deepseek-ai/cordis'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
-import { ImError, type ImApi, type ImSessionRecord } from '@deepseek-ai/dsh-im'
-// The entry re-exports only types, so the request-id helper comes from the package's published `./src/*` subpath.
-import { operationId } from '@deepseek-ai/dsh-im/src/send.ts'
+import { ImError, operationId, type ImApi, type ImSessionRecord } from '@deepseek-ai/dsh-im'
 import {
   defineTool, type ParameterSchemaSpec, type ToolRunContext, type ValueSchemaSpec,
 } from '@deepseek-ai/dsh-tools'
