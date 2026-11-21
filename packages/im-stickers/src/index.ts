@@ -34,6 +34,7 @@ import {
 import { complete } from './llm.ts'
 import type { PickOptions, StickerFilter } from './pick.ts'
 import { classifySystem, classifyUser } from './prompt.ts'
+import { applyPanel } from './panel.ts'
 import { applyPrompt, applyTools } from './tools.ts'
 
 export {
@@ -59,6 +60,7 @@ export {
 export {
   classifySystem, classifyUser, parseClassification, parseJsonLoose, PROMPT_ORDER, PROMPT_SECTION, stickerPrompt,
 } from './prompt.ts'
+export { applyPanel, STICKERS_TAB, stickersTab, type PanelHost, type PanelTabDefinition, type StickerTabService } from './panel.ts'
 export { MessageSegments, segmentWantsSticker, type MessageSegment, type SegmentTimers } from './segments.ts'
 export { applyPrompt, applyTools, STICKER_TOOLS } from './tools.ts'
 
@@ -143,6 +145,8 @@ export class ImStickersService extends Service {
     if (this.config.prompt) {
       ctx.inject(['systemPrompt'], (scoped) => { applyPrompt(scoped, ctx.im, this.library, tools) })
     }
+    // The operator panel is optional: its tab appears when `dsh-im-panel` is mounted.
+    applyPanel(ctx, this)
     ctx.logger.info('IM stickers: %d in %s', this.library.all().length, this.dir)
   }
 
