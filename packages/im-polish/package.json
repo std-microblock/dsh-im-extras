@@ -11,17 +11,25 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
+    "./client": "./client/client.js",
     "./package.json": "./package.json"
   },
   "files": [
     "dist",
+    "client",
     "README.md"
   ],
   "license": "MIT",
+  "dsh": {
+    "client": {
+      "platform": "web"
+    }
+  },
   "author": "MicroBlock",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build:client": "node ../im-panel/scripts/build-client.mjs .",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json",
     "test": "node --experimental-transform-types --disable-warning=ExperimentalWarning --import ../../scripts/test-resolve.mjs --test --test-timeout=60000 \"test/**/*.test.ts\""
   },
   "devDependencies": {

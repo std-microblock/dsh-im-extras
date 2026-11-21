@@ -86,6 +86,10 @@ listener error never costs the agent its message.
         enabled: false
 ```
 
+## Panel tab
+
+With [dsh-im-panel](../im-panel/README.md) mounted, the plugin adds the **润色** tab (id `polish`, order 50): every decision with the text before and after side by side, the dropped sends with the reason the agent read and the message they resembled, the drawn sub-styles and raw model answers, filters by chat / action / text, counts per reason, a per-chat on/off switch, and a preview box that shows what a sentence would become without sending it. The host half (`src/panel.ts`) answers `GET`/`POST /api/im-panel/tab?id=polish`; the browser half is `src/client/index.tsx`, bundled to `client/client.js` by `pnpm run build:client` (served as the package's `./client` export). Neither half depends on the panel package: both describe its API structurally.
+
 ## API
 
 `ctx.imPolish` (`ImPolishService`):
