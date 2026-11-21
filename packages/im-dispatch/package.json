@@ -1,0 +1,46 @@
+{
+  "name": "dsh-im-dispatch",
+  "version": "0.1.0",
+  "description": "Per-chat router sessions with task workers for the DeepSeek Harness IM host: QuickJS route rules, thread follow-up, per-chat wake/reply modes, /skill commands and a cross-chat chronicle.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/std-microblock/dsh-im-extras.git",
+    "directory": "packages/im-dispatch"
+  },
+  "keywords": ["deepseek-harness", "dsh", "im", "dispatch", "router", "chatbot"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --experimental-transform-types --no-warnings --import ../../scripts/test-resolve.mjs --test --test-timeout=60000 \"test/**/*.test.ts\""
+  },
+  "dependencies": {
+    "@tootallnate/quickjs-emscripten": "0.23.0",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "*",
+    "@deepseek-ai/dsh-im": "*"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/cordis": { "optional": true },
+    "@deepseek-ai/dsh-im": { "optional": true }
+  }
+}
