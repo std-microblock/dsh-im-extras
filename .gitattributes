@@ -1,0 +1,7 @@
+# One checkout, several machines: the repository stores LF and every machine
+# writes LF, so a diff never shows a whole file because of its line endings.
+* text=auto eol=lf
+
+# Generated on this machine only, but keep it out of `git diff` if it is ever
+# checked in by mistake.
+tsconfig.harness.json linguist-generated

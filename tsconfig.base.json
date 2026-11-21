@@ -1,0 +1,23 @@
+{
+  "//": [
+    "The settings every plugin shares: one module system, one strictness profile, one emit shape.",
+    "Each package extends this plus the generated `tsconfig.harness.json`, and declares only `rootDir`/`outDir`",
+    "itself — those are resolved against the config file that declares them, so they cannot live here."
+  ],
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "types": ["node"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "declaration": true,
+    "sourceMap": false,
+    "skipLibCheck": true,
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
+    "allowJs": false
+  }
+}

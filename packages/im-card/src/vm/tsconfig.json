@@ -1,0 +1,16 @@
+{
+  "//": [
+    "The card VM runtime is a project of its own: it is bundled into one plain script evaluated inside QuickJS.",
+    "It therefore sees no Node and no DOM types — `lib` is ES2023 and `types` is empty — so a host API that slipped",
+    "in would fail the build here instead of failing at click time inside a VM. esbuild does the emit",
+    "(`scripts/build-vm.mjs`), so this config only type-checks."
+  ],
+  "extends": "../../../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": [],
+    "lib": ["ES2023"],
+    "jsx": "preserve",
+    "noEmit": true
+  },
+  "include": ["**/*.ts", "**/*.tsx"]
+}

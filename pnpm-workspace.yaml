@@ -1,0 +1,16 @@
+packages:
+  - packages/*
+
+# Same layout the deployment's profile installs: one node_modules for every
+# plugin, so a plugin that needs a runtime dependency of another (the card
+# plugin's esbuild, the agent plugin's zod) resolves it the way it does in
+# production. `autoInstallPeers: false` because the harness packages are not on
+# a registry — they are types here (see `scripts/harness-tsconfig.mjs`) and
+# real modules only inside the deployment.
+nodeLinker: hoisted
+autoInstallPeers: false
+allowBuilds:
+  # The card plugin type-checks and bundles card sources with esbuild at runtime.
+  esbuild: true
+  cpu-features: false
+  ssh2: false

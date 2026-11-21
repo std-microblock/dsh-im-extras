@@ -1,0 +1,14 @@
+{
+  "extends": ["../../tsconfig.base.json", "../../tsconfig.harness.json"],
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist"
+  },
+  "include": ["src/**/*.ts"],
+  "//": [
+    "`src/vm/` is a project of its own (`src/vm/tsconfig.json`): it is bundled into one plain script for the QuickJS",
+    "VM and may not see Node types. It is excluded here so `tsc` neither type-checks nor emits it into `dist/vm/`,",
+    "where `scripts/build-vm.mjs` puts the bundle."
+  ],
+  "exclude": ["src/vm"]
+}

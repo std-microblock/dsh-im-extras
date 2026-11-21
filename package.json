@@ -1,0 +1,26 @@
+{
+  "name": "dsh-im-extras",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Plugins for the DeepSeek Harness IM host (dsh-im): per-chat router sessions with task workers, a streamed progress message, interactive cards for Lark and QQ, session capability grants, reply polishing, a sticker library and an operator panel.",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/std-microblock/dsh-im-extras.git"
+  },
+  "packageManager": "pnpm@11.7.0",
+  "engines": {
+    "node": ">=24.9.0"
+  },
+  "scripts": {
+    "harness": "node scripts/harness-tsconfig.mjs",
+    "build": "pnpm run harness && pnpm -r run build",
+    "typecheck": "pnpm run harness && pnpm -r run typecheck",
+    "test": "pnpm -r run test"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "typescript": "6.0.3"
+  }
+}
