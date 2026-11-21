@@ -9,7 +9,7 @@ import type { TurnCardService, TurnCards } from '../src/cards.ts'
 import type { MessageComposer } from '../src/renderer.ts'
 import { SummaryRenderer } from '../src/renderer.ts'
 import { NO_OUTPUT_TOOL } from '../src/tools.ts'
-import { AUTH_STOP_BUTTON_PREFIX } from '../src/view.ts'
+import { AUTH_STOP_BUTTON_PREFIX, LEGACY_STOP_BUTTON_PREFIX, STOP_BUTTON_PREFIX } from '../src/view.ts'
 
 /** The hosted session every turn of these tests belongs to. */
 const SESSION = 'im-s1' as SessionId
@@ -485,4 +485,82 @@ test('dsh:auth-stop button blocks unauthorized clicks with toast and allows auth
   await output.end(activity([], 'cancelled'))
   const mention = nodesOf(streams[0].closedWith).find(entry => entry.type === 'at')
   assert.deepEqual(mention?.attrs, { type: 'user', id: 'ou_owner', name: '独占者' })
+})
+
+test('summary:stop and legacy dsh:stop clicks stop a session bound to the button\'s chat; failures are only logged', async () => {
+  const listeners = new Map<string, ((...args: any[]) => any)[]>()
+  const stopped: string[] = []
+  const warnings: unknown[][] = []
+  let registeredRenderer: any
+  let failStop = false
+  const ctx: any = {
+    logger: { info() {}, warn(...args: unknown[]) { warnings.push(args) }, error() {} },
+    get: () => undefined,
+    im: {
+      outputs: { register: (r: any) => { registeredRenderer = r; return () => {} } },
+      sessions: {
+        get: (id: string) => id === SESSION
+          ? { sessionId: SESSION, bindings: [{ chat: CHAT, writable: true }] }
+          : undefined,
+        stop: async (id: string) => {
+          if (failStop) throw new Error('boom')
+          stopped.push(id)
+        },
+      },
+    },
+    on: (name: string, fn: any) => {
+      listeners.set(name, [...listeners.get(name) ?? [], fn])
+      return () => {}
+    },
+    inject: () => () => {},
+    effect: (fn: () => any) => { fn(); return () => {} },
+    waterfall: (_name: string, _msg: any, next: () => any) => next(),
+  }
+  applySummary(ctx, config())
+  const click = async (id: string, chat: string = CHAT) => {
+    for (const fn of listeners.get('im/button') ?? []) {
+      await fn({ id, chat: { key: chat }, user: { id: 'ou_1', name: '甲' } })
+    }
+    await settled()
+  }
+
+  // The renderer's own button carries the plugin prefix.
+  const streams: any[] = []
+  const io: ImOutputIO = {
+    chat: CHAT,
+    stream: async () => {
+      const s = {
+        strategy: 'edit' as const, updates: [] as any[], closedWith: undefined as any,
+        update(content: any) { s.updates.push(content) },
+        async close(content: any) { s.closedWith = content; return { handle: { parts: [{ id: 'om_1' }] } } },
+        async abort() { return true },
+      }
+      streams.push(s)
+      return s as any
+    },
+    send: async () => ({} as any),
+  }
+  const output = registeredRenderer.begin(activity([]), io)
+  await settled()
+  const buttons = nodesOf(streams[0].updates[0]).filter(n => n.type === 'button')
+  assert.equal(buttons[0]?.attrs.id, `${STOP_BUTTON_PREFIX}${SESSION}`)
+  assert.equal(STOP_BUTTON_PREFIX, 'summary:stop:')
+
+  await click(`${STOP_BUTTON_PREFIX}${SESSION}`, 'lark:other-chat')
+  await click(`${STOP_BUTTON_PREFIX}im-unknown`)
+  await click('card:approve')
+  assert.deepEqual(stopped, [])
+
+  await click(`${STOP_BUTTON_PREFIX}${SESSION}`)
+  await click(`${LEGACY_STOP_BUTTON_PREFIX}${SESSION}`)
+  assert.deepEqual(stopped, [SESSION, SESSION])
+
+  failStop = true
+  await click(`${STOP_BUTTON_PREFIX}${SESSION}`)
+  assert.equal(warnings.length, 1)
+  assert.match(String(warnings[0]![0]), /could not stop/)
+
+  await output.end(activity([], 'cancelled'))
+  const mention = nodesOf(streams[0].closedWith).find(entry => entry.type === 'at')
+  assert.deepEqual(mention?.attrs, { type: 'user', id: 'ou_1', name: '甲' })
 })

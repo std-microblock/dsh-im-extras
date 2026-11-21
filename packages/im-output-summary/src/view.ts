@@ -10,13 +10,36 @@ import type { Child, Element } from '@deepseek-ai/cordis-plugin-im-core'
 import { h } from '@deepseek-ai/cordis-plugin-im-core'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { ImActivity } from '@deepseek-ai/dsh-im'
-// The entry re-exports only types, so the stop-button id prefix comes from the package's published `./src/*` subpath.
-import { STOP_BUTTON_PREFIX } from '@deepseek-ai/dsh-im/src/outputs.ts'
 import { segmentsOf, type TurnCards } from './cards.ts'
 import type { SummaryStrings } from './locale.ts'
 
 /** Characters of an error message kept in the closing line. */
 export const SUMMARY_ERROR_CHARS = 200
+
+/**
+ * Prefix of this renderer's stop button: `summary:stop:<sessionId>`. The plugin answers the click itself
+ * (`im/button`): it stops the session when the chat the button lives in is bound to it.
+ */
+export const STOP_BUTTON_PREFIX = 'summary:stop:'
+
+/**
+ * The stop prefix the IM host used to route itself, still carried by cards published before this renderer owned the
+ * button; a click on one is handled exactly like {@link STOP_BUTTON_PREFIX}.
+ */
+export const LEGACY_STOP_BUTTON_PREFIX = 'dsh:stop:'
+
+/**
+ * The session a stop control targets.
+ * @param id - a button id.
+ * @returns the session id and whether the click goes through the session-auth guard; `undefined` for any other button.
+ */
+export function stopTargetOf(id: string): { sessionId: string; auth: boolean } | undefined {
+  if (id.startsWith(AUTH_STOP_BUTTON_PREFIX)) return { sessionId: id.slice(AUTH_STOP_BUTTON_PREFIX.length), auth: true }
+  for (const prefix of [STOP_BUTTON_PREFIX, LEGACY_STOP_BUTTON_PREFIX]) {
+    if (id.startsWith(prefix)) return { sessionId: id.slice(prefix.length), auth: false }
+  }
+  return undefined
+}
 
 /** Stop button prefix used when `dsh-im-session-auth` (`ctx.imAuth`) is mounted so stop clicks require ACL. */
 export const AUTH_STOP_BUTTON_PREFIX = 'dsh:auth-stop:'
@@ -27,7 +50,7 @@ export interface SummaryPlan {
   editing: boolean
   /** Offer the stop control while the turn runs (`config.showStop`). */
   showStop: boolean
-  /** Route stop clicks through session auth guard (`dsh:auth-stop:`) instead of unguarded `dsh:stop:`. */
+  /** Route stop clicks through session auth guard (`dsh:auth-stop:`) instead of the unguarded `summary:stop:`. */
   authStop?: boolean
   /** Answer characters shown at most (`config.maxChars`). */
   maxChars: number
@@ -163,7 +186,7 @@ export function boundedError(message: string): string {
 }
 
 /**
- * The stop control of this turn's session (the core routes `dsh:stop:<sessionId>` to `sessions.stop`).
+ * The stop control of this turn's session (this plugin routes `summary:stop:<sessionId>` to `sessions.stop`).
  *
  * A `<fallback>`: an action button where the mode renders one, and a line telling the reader how to stop everywhere
  * else — a platform without interactive buttons must not receive a dead button.

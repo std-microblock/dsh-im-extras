@@ -6,7 +6,7 @@ A session whose `spec.output` is `summary` publishes a live progress card while 
 the latest model-written progress summary or the answer so far, a stop control, and the link to the page showing the
 work. When the turn ends:
 
-- If a live progress card was opened and another plugin contributes `process` content (such as `dsh-toc-agent-plugin`'s
+- If a live progress card was opened and another plugin contributes `process` content (such as a page-link plugin's
   `🔗 查看工作过程` collapsible panel), that process card collapses in place to the `process` content alone, and the
   final answer with its footer (elapsed time, tool calls) — or error line — is sent as a **separate new message** so the
   chat notifies natively and displays the answer in the conversation preview.
@@ -40,7 +40,7 @@ makes `no_output` its **first tool call** — alone, or in the same batch as the
 them. The first tool call is what opens the card, so a later call still withdraws it, but the chat saw it appear and
 disappear. Anything such a turn must say goes out through `im_send` / `im_send_card`.
 
-The tool is registered when the deployment has a tool registry, next to a prompt section (`tool:no-output`) telling
+The tool is registered when the host has a tool registry, next to a prompt section (`tool:no-output`) telling
 the model when to reach for it. A silenced turn still shows the working reaction: the message is not the only signal.
 
 ## Contributions: `im/streaming-message`
@@ -63,15 +63,21 @@ separate collapsed `process` message in the chat. A listener must call `next()` 
 adds on `progress` / `process` stays in the process card, and checking `hasProcessMessage` avoids repeating it on the
 separate result card.
 
-That is how `dsh-toc-agent-plugin` puts the session's page link (`🔗 查看工作过程`) in the running card, keeps only
+That is how a page-link plugin can put the session's page link (`🔗 查看工作过程`) in the running card, keeps only
 that panel on the collapsed process card when the turn finishes, and puts it on the single card of a turn that never
 opened a process card. The renderer advertises `streamsMessage` in the renderer registry so that plugin knows its own
 link message would be a duplicate. Nothing in this plugin names the link, the page server, or any other contributor:
 without listeners the message is exactly what is built here.
 
-## Who stopped the turn
+## The stop control
 
-A click on the stop control comes back through `im/button` with the person who clicked it, and the closing footer names
+The stop button is this plugin's own: its id is `summary:stop:<sessionId>`, and the plugin answers the click on `im/button`:
+when the session is bound to the chat the button lives in, it calls `sessions.stop` (a failure is only logged). Cards
+published before the renderer owned the button carry `dsh:stop:<sessionId>` and are handled the same way. With
+`dsh-im-session-auth` mounted the button carries `dsh:auth-stop:<sessionId>` instead, and only the session's owner or
+authorized collaborators may press it.
+
+The click comes back with the person who clicked it, and the closing footer names
 them — `1.2 秒 · 3 次工具调用 · 已由 @张三 取消`. A turn stopped another way (`/stop`, the GUI page) has no click to
 attribute and says only `已取消`.
 
@@ -100,7 +106,7 @@ attribute and says only `已取消`.
 | `maxChars` | answer characters shown at most, with a truncation note |
 | `intervalMs` | minimum gap between two published states |
 | `firstOutput` | `immediate` / `first-tool` (see above) |
-| `showStop` | offer the `dsh:stop:<sessionId>` control while the turn runs |
+| `showStop` | offer the `summary:stop:<sessionId>` control while the turn runs |
 | `progress` | model-written progress summaries on platforms that can rewrite the message |
 | `progressFirstDelayMs` / `progressIntervalMs` / `progressMinSteps` | cadence of those summaries |
 | `progressMaxTokens` / `progressReasoningEffort` | bounds of one summary request (a fork inherits the turn's route otherwise) |
@@ -109,7 +115,7 @@ attribute and says only `已取消`.
 ## Dependencies
 
 - `ctx.im` (required, `inject: ['im', 'llm', 'sessions']`): `outputs.register` for the renderer, `sessions.get` for the
-  silencing call, `im/button` for who stopped a turn.
+  silencing call, `sessions.stop` and `im/button` for the stop control.
 - `ctx.imCards` (optional, `dsh-im-card`): a ```` ```satori-tsx ```` block of the answer becomes a live card in place.
 - `ctx.waterfall` (the event system): `im/streaming-message` is dispatched for every state of every streamed message.
 - `ctx.tools` / `ctx.systemPrompt` (optional): `no_output` and its guidance.

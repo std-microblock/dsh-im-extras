@@ -16,8 +16,8 @@
  * - The `no_output` tool silences a turn that should leave the chat untouched (a click that only updates a card, work
  *   nobody should read): what it published is withdrawn and nothing else goes out.
  *
- * The message is open to other plugins through the `im/streaming-message` waterfall: a deployment that serves a page
- * per session (`dsh-toc-agent-plugin`) contributes that link to the message this renderer already publishes, instead
+ * The message is open to other plugins through the `im/streaming-message` waterfall: another plugin (a page-link plugin, for
+ * one) contributes a link to the session's page to the message this renderer already publishes, instead
  * of posting a second "working" message beside it.
  *
  * ```yaml
@@ -36,7 +36,6 @@
  */
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-im'
-import { STOP_BUTTON_PREFIX } from '@deepseek-ai/dsh-im/src/outputs.ts'
 import type {} from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-tools'
@@ -45,7 +44,7 @@ import { ProgressSummarizer } from './progress.ts'
 import type { TurnCardService } from './cards.ts'
 import { SummaryRenderer } from './renderer.ts'
 import { applyNoOutputTool, GUIDANCE, GUIDANCE_ORDER, GUIDANCE_SECTION } from './tools.ts'
-import { AUTH_STOP_BUTTON_PREFIX } from './view.ts'
+import { stopTargetOf } from './view.ts'
 
 export { Config, type Config as SummaryConfig, type FirstOutput, type SummaryLocale } from './config.ts'
 export { stringsOf, type SummaryStrings } from './locale.ts'
@@ -61,7 +60,7 @@ export {
 } from './renderer.ts'
 export { applyNoOutputTool, GUIDANCE, GUIDANCE_ORDER, GUIDANCE_SECTION, NO_OUTPUT_TOOL } from './tools.ts'
 export {
-  answerBody, answerOf, AUTH_STOP_BUTTON_PREFIX, boundedAnswer, slottedContent, boundedError, closingContent, finalContent,
+  answerBody, answerOf, AUTH_STOP_BUTTON_PREFIX, LEGACY_STOP_BUTTON_PREFIX, STOP_BUTTON_PREFIX, stopTargetOf, boundedAnswer, slottedContent, boundedError, closingContent, finalContent,
   footerLine, runningContent, runningTool, statusLine, stopButton, SUMMARY_ERROR_CHARS, toolCalls, type SummaryPlan,
 } from './view.ts'
 
@@ -84,27 +83,27 @@ export function apply(ctx: Context, config: SummaryConfig): void {
     (message, next) => ctx.waterfall('im/streaming-message', message, next),
     () => ctx.get('imAuth') !== undefined)
   ctx.effect(() => ctx.im.outputs.register(renderer))
-  // A turn somebody stopped from the card closes with a footer naming them; when `imAuth` is active, stop controls
-  // carry `dsh:auth-stop:` so unauthorized group members cannot cancel an exclusive session.
+  // The stop control belongs to this renderer: `summary:stop:<id>` (and `dsh:stop:<id>` on cards published while the
+  // IM host still routed it) stops a session bound to the chat the button lives in. When `imAuth` is active, stop
+  // controls carry `dsh:auth-stop:` so unauthorized group members cannot cancel an exclusive session. A turn somebody
+  // stopped from the card closes with a footer naming them.
   ctx.on('im/button', (event) => {
-    if (event.id.startsWith(STOP_BUTTON_PREFIX)) {
-      renderer.stoppedBy(event)
-      return
-    }
-    if (!event.id.startsWith(AUTH_STOP_BUTTON_PREFIX)) return
-    const target = event.id.slice(AUTH_STOP_BUTTON_PREFIX.length)
-    const record = ctx.im.sessions.get(target)
+    const target = stopTargetOf(event.id)
+    if (target === undefined) return
+    const record = ctx.im.sessions.get(target.sessionId)
     if (record === undefined || !record.bindings.some(binding => binding.chat === event.chat.key)) return
-    const auth = ctx.get('imAuth') as { canInteract(sessionId: string, userId: string): boolean } | undefined
-    if (auth !== undefined && !auth.canInteract(record.sessionId, event.user.id)) {
-      void event.raw?.respond?.({
-        toast: { type: 'warning', content: '当前会话已被独占，仅独占者及已授权协作者可停止运行' },
-      })
-      return
+    if (target.auth) {
+      const auth = ctx.get('imAuth') as { canInteract(sessionId: string, userId: string): boolean } | undefined
+      if (auth !== undefined && !auth.canInteract(record.sessionId, event.user.id)) {
+        void event.raw?.respond?.({
+          toast: { type: 'warning', content: '当前会话已被独占，仅独占者及已授权协作者可停止运行' },
+        })
+        return
+      }
     }
     renderer.stoppedBy(event)
     void ctx.im.sessions.stop(record.sessionId).catch((error: unknown) => {
-      ctx.logger.warn('IM auth-stop could not stop session %s: %s', record.sessionId, error)
+      ctx.logger.warn('IM stop button could not stop session %s: %s', record.sessionId, error)
     })
   })
   // A turn that must leave the chat untouched says so before it publishes: `no_output`, plus the guidance that makes a

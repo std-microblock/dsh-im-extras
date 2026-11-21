@@ -20,7 +20,7 @@
  * - `no_output` silences a turn: what it published is withdrawn and nothing further goes out, so a card-only turn
  *   leaves the chat untouched.
  * - Every state of the message is composed through the `im/streaming-message` waterfall, which is where another plugin
- *   adds what only it knows — the deployment's page link for the session, for one.
+ *   adds what only it knows — a page link for the session, for one.
  * - The stop control is a `<fallback>`: an action button where the mode renders one, and a `reply /stop` line
  *   everywhere else, so the turn always offers a way out and never sends dead button glyphs.
  * - A turn that produced nothing to show (and no contributed `process` panel to keep) is recalled; when the platform
@@ -34,8 +34,6 @@ import { h } from '@deepseek-ai/cordis-plugin-im-core'
 import type {
   ImActivity, ImActivityChange, ImOutputIO, ImOutputRenderer, ImTurnOutput,
 } from '@deepseek-ai/dsh-im'
-// The entry re-exports only types, so the stop-button id prefix comes from the package's published `./src/*` subpath.
-import { STOP_BUTTON_PREFIX } from '@deepseek-ai/dsh-im/src/outputs.ts'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { SummaryConfig } from './config.ts'
 import type { ImStreamingMessage, StreamingPart } from './events.ts'
@@ -44,8 +42,8 @@ import type { ProgressSource } from './progress.ts'
 import type { TurnCardService } from './cards.ts'
 import { NO_OUTPUT_TOOL } from './tools.ts'
 import {
-  answerOf, AUTH_STOP_BUTTON_PREFIX, boundedAnswer, closingContent, finalContent, footerLine, runningContent,
-  slottedContent, type SummaryPlan,
+  answerOf, boundedAnswer, closingContent, finalContent, footerLine, runningContent, slottedContent, stopTargetOf,
+  type SummaryPlan,
 } from './view.ts'
 
 /** `spec.output` value that selects this renderer. */
@@ -65,7 +63,7 @@ export interface SummaryLog {
 
 /** The click this renderer reads: the stop control of one of its own messages. */
 export interface StopClick {
-  /** `dsh:stop:<sessionId>`, as the stop control carries it. */
+  /** `summary:stop:<sessionId>` (or the legacy `dsh:stop:` / guarded `dsh:auth-stop:`), as the stop control carries it. */
   id: string
   /** Who clicked it. */
   user: { id: string; name?: string }
@@ -77,8 +75,8 @@ export class SummaryRenderer implements ImOutputRenderer {
 
   /**
    * This renderer publishes a session's turns as one streamed message, and takes other plugins' contributions to it
-   * through `im/streaming-message`. A deployment that would otherwise post a message per turn — the page link of
-   * `dsh-toc-agent-plugin`, for one — reads this and contributes instead of publishing beside it.
+   * through `im/streaming-message`. A plugin that would otherwise post a message per turn — a page-link plugin, for
+   * one — reads this and contributes instead of publishing beside it.
    */
   readonly streamsMessage = true
 
@@ -126,13 +124,9 @@ export class SummaryRenderer implements ImOutputRenderer {
    * @param click - the button click as the IM host reports it.
    */
   stoppedBy(click: StopClick): void {
-    const sessionId = click.id.startsWith(AUTH_STOP_BUTTON_PREFIX)
-      ? click.id.slice(AUTH_STOP_BUTTON_PREFIX.length)
-      : click.id.startsWith(STOP_BUTTON_PREFIX)
-        ? click.id.slice(STOP_BUTTON_PREFIX.length)
-        : undefined
-    if (sessionId === undefined) return
-    this.turns.get(sessionId as SessionId)?.stoppedBy(click.user)
+    const target = stopTargetOf(click.id)
+    if (target === undefined) return
+    this.turns.get(target.sessionId as SessionId)?.stoppedBy(click.user)
   }
 }
 

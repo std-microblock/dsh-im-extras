@@ -2,7 +2,7 @@
   "name": "dsh-im-output-summary",
   "version": "0.1.0",
   "private": true,
-  "description": "Streamed summary output renderer for the toC bot's IM sessions: one update-in-place card per turn with live progress, a model-written summary, and the final answer.",
+  "description": "Streamed summary output renderer for dsh-im sessions: one update-in-place card per turn with live progress, a model-written summary, and the final answer.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

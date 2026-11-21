@@ -24,7 +24,7 @@ export interface SummaryConfig {
   intervalMs: number
   /** Whether the message appears as the turn starts or at its first tool call. */
   firstOutput: FirstOutput
-  /** Offer the `dsh:stop:<sessionId>` button on platforms that support action buttons. */
+  /** Offer the `summary:stop:<sessionId>` button on platforms that support action buttons. */
   showStop: boolean
   /** Enable model-written progress summaries on platforms that can rewrite the streamed message. */
   progress: boolean
