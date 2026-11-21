@@ -1,0 +1,62 @@
+{
+  "name": "dsh-im-polish",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Send-time wording polish for dsh-im: rewrites a bot's text message in a configured style with the chat's recent context, and holds back a message that repeats what the bot just said.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "license": "MIT",
+  "author": "MicroBlock",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --experimental-transform-types --disable-warning=ExperimentalWarning --import ../../scripts/test-resolve.mjs --test --test-timeout=60000 \"test/**/*.test.ts\""
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "*",
+    "@deepseek-ai/cordis-plugin-im-core": "*",
+    "@deepseek-ai/dsh-im": "*",
+    "@deepseek-ai/dsh-llm": "*",
+    "@deepseek-ai/dsh-storage-domain": "*",
+    "@deepseek-ai/dsh-timeout": "*",
+    "@deepseek-ai/schemastery": "*"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/cordis": {
+      "optional": true
+    },
+    "@deepseek-ai/cordis-plugin-im-core": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-im": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-llm": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-storage-domain": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-timeout": {
+      "optional": true
+    },
+    "@deepseek-ai/schemastery": {
+      "optional": true
+    }
+  }
+}

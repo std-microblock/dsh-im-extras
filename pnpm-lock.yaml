@@ -32,6 +32,12 @@ importers:
 
   packages/im-output-summary: {}
 
+  packages/im-polish:
+    devDependencies:
+      '@types/node':
+        specifier: ^26.6.4
+        version: 26.6.6
+
   packages/im-session-auth:
     dependencies:
       zod:
