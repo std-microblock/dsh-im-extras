@@ -36,6 +36,8 @@ export interface CardRecord {
   sentAt?: number
   /** What the chat platform could do with the card when it was published. */
   platform?: CardPlatform
+  /** Published without the session's write grant (the operator's test chat): resends go out without it too. */
+  ungranted?: true
   placement: CardPlacement
   bundle: CardBundle
   props: unknown
@@ -99,6 +101,7 @@ const cardSchema = z.looseObject({
   partKind: z.exactOptional(z.string()),
   sentAt: z.exactOptional(z.number()),
   platform: z.exactOptional(platformSchema),
+  ungranted: z.exactOptional(z.literal(true)),
   placement: z.union([
     z.object({ kind: z.literal('message') }),
     z.object({ kind: z.literal('slot'), host: z.string(), index: z.number().int().nonnegative() }),

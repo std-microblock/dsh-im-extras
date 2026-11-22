@@ -79,7 +79,7 @@ together with what the dry render dropped (`INTERACTION_DROPPED`, degraded eleme
 
 | | Lark | QQ (markdown + keyboard) |
 | --- | --- | --- |
-| republish after a change | in-place edit (`PATCH`), paced | recall the old message (within the platform's 2-minute window) and answer the click with a new one (passive reply through the click's referrer), at most `replaceLimit` per card per 5 minutes |
+| republish after a change | in-place edit (`PATCH`), paced | recall the old message (within the platform's 2-minute window) and answer the click with a new one through `ctx.im.send` (stored and attributed like the first publication; a passive reply through the click's `referrer`), at most `replaceLimit` per card per 5 minutes |
 | refresh without a click (timer, `fetch`, host event) | yes | no: the change shows with the next click; `wakeOnTimer` never revives such a card |
 | clicks on an older copy | — | refused: the card lives in the newest message |
 | toast | yes (`ButtonEvent.respond`) | no; `toastFallback: text` turns it into a one-line reply |
@@ -166,8 +166,7 @@ The harness features this relies on: the click answer (`ButtonEvent.respond` / `
 - Lark and QQ give a card callback only the clicker's platform user id, so `event.user.name` is absent; show people
   with `<at type="user" id={event.user.id} />`.
 - A Lark card is editable for 14 days; after that clicks still run but the message no longer changes.
-- On QQ the resent card goes straight to the platform (not through `ctx.im.send`), so it is not stored in the chat
-  history; `im_update_card` shows the new code only by answering the card's last click, else with the next click.
+- On QQ `im_update_card` shows the new code only by answering the card's last click, else with the next click.
 - On QQ a card inside a streamed answer (`satori-tsx`) is republished with the whole answer message around it: a
   click that changes it resends the answer too.
 - Per-viewer cards (Lark exclusive cards / ephemeral messages) are not implemented.

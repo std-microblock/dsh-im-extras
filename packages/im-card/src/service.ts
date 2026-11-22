@@ -30,7 +30,7 @@
  *
  * Platforms differ in what they can do with a published card (`platform.ts`). Where messages cannot be edited (QQ), a
  * card changed by a click is republished by recalling the old message (when the platform still allows it) and
- * answering the click with a new one, through the click's referrer (a passive reply). The card then lives in the new
+ * answering the click with a new one through `ctx.im.send`, with the click's referrer (a passive reply). The card then lives in the new
  * message; clicks on an older copy are refused, and nothing republishes it outside a click — a timer or a request that
  * changed it shows with the next click. Those resends are bounded per card (`replaceLimit` per 5 minutes), because the
  * platform grants few replies per event. *
@@ -45,7 +45,7 @@ import {
 } from '@deepseek-ai/cordis-plugin-im-core'
 import {
   ImChatKey, ImMessageKey, splitKey,
-  type ImApi, type ImButtonEvent, type ImCheckEvent, type ImSelectEvent, type ImSendResult,
+  type ImApi, type ImButtonEvent, type ImCheckEvent, type ImSelectEvent, type ImSendOptions, type ImSendResult,
 } from '@deepseek-ai/dsh-im'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { CardBundle } from './bundle.ts'
@@ -458,6 +458,7 @@ export class CardService {
       bundle: request.bundle, props: request.props ?? {}, closed: false, createdAt: now, updatedAt: now, platform,
       ...requester === undefined ? {} : { requester },
       ...dataDir === undefined ? {} : { dataDir },
+      ...request.grant === false ? { ungranted: true as const } : {},
     }
     const live = await this.boot(record)
     const result = await this.im.send(request.chat, h('message', directive(EXPRESSIVE_DIRECTIVE), ...live.elements), {
@@ -788,8 +789,8 @@ export class CardService {
     }
     if (toast === undefined || this.config.toastFallback !== 'text') return
     try {
-      const bot = this.im.bot(record.chat as ImChatKey)
-      await bot.send(this.replyTarget(record.chat as ImChatKey, event), h('message', h.text(toast.content)))
+      // A paragraph, not bare text: the polish step only rewords plain text, and a card's notice is the card's own words.
+      await this.im.send(record.chat as ImChatKey, h('message', h('p', h.text(toast.content))), this.publisher(record, event))
     } catch (error) {
       this.ctx.logger.warn('card %s toast reply failed: %s', record.id, error instanceof Error ? error.message : String(error))
     }
@@ -808,6 +809,18 @@ export class CardService {
       ? this.hosts().get(record.placement.host)?.message
       : record.message
     return current !== undefined && current !== clicked
+  }
+
+  /**
+   * How a card's session publishes an answer to one interaction: under its write grant (unless the card went to the
+   * operator's test chat), as a passive reply through the interaction's referrer.
+   */
+  private publisher(by: Pick<CardRecord, 'session' | 'ungranted'>, event: Interaction): ImSendOptions {
+    const referrer = event.raw.referrer
+    return {
+      ...by.ungranted === true ? {} : { session: by.session as SessionId },
+      ...referrer === undefined ? {} : { referrer },
+    }
   }
 
   /** The target a publication answering one interaction goes to: the chat, with the interaction's referrer. */
@@ -1090,7 +1103,7 @@ export class CardService {
         return
       }
       live.unpublished = false
-      if (await this.replace(record.id, record, elements, event)) await this.table().put(record.id, record)
+      if (await this.replace(record.id, record, elements, event, record)) await this.table().put(record.id, record)
       return
     }
     await this.paced(record.message, now, () => this.edit(record, record.message!, h('message', ...elements)))
@@ -1125,7 +1138,9 @@ export class CardService {
    */
   private async replaceHost(host: HostRecord, event: Interaction): Promise<void> {
     const content = this.fill(host)
-    if (!await this.replace(host.id, host, content.children, event)) return
+    const first = host.cards.map(id => this.live.get(id)?.record ?? this.table().get(id)).find(card => card !== undefined)
+    if (first === undefined) return
+    if (!await this.replace(host.id, host, content.children, event, first)) return
     await this.hosts().put(host.id, host)
     for (const id of host.cards) {
       const live = this.live.get(id)
@@ -1181,10 +1196,12 @@ export class CardService {
    * @param pointer - the record whose message is replaced; updated in place.
    * @param elements - the new content.
    * @param event - the interaction answered.
+   * @param by - the card whose session publishes the new message (its write grant, its attribution).
    * @returns whether the new message went out.
    */
   private async replace(
     owner: string, pointer: MessagePointer & { chat: string }, elements: readonly Child[], event: Interaction,
+    by: Pick<CardRecord, 'session' | 'ungranted'>,
   ): Promise<boolean> {
     const message = pointer.message
     if (message === undefined) return false
@@ -1203,7 +1220,17 @@ export class CardService {
     const old = this.handleFor(pointer, message)
     let handle: MessageHandle
     try {
-      handle = (await bot.send(this.replyTarget(chat, event), h('message', directive(EXPRESSIVE_DIRECTIVE), ...elements))).handle
+      // Through the IM host like the first publication: the new message is stored and attributed to the session, and
+      // `im/before-send` sees it (a card is never text the polish step rewords). The click's referrer makes it a
+      // passive reply to that click.
+      const result = await this.im.send(chat, h('message', directive(EXPRESSIVE_DIRECTIVE), ...elements), {
+        ...this.publisher(by, event),
+      })
+      if (result.status === 'failed' || result.handle === undefined) {
+        this.ctx.logger.warn('card message %s resend failed: %s', message, result.error ?? result.status)
+        return false
+      }
+      handle = result.handle
     } catch (error) {
       this.ctx.logger.warn('card message %s resend failed: %s', message, error instanceof Error ? error.message : String(error))
       return false

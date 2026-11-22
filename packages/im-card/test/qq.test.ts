@@ -74,7 +74,7 @@ function harness(keyboard = true) {
     return { bot: 'qq:test', target: { chat: REF }, mode: 'markdown', parts: [{ id, kind: 'message', time: 0 }], createdAt: Date.now(), edits: 0, content }
   }
   const sent: { id: string; text: string; content: any }[] = []
-  const resent: { id: string; text: string; referrer: unknown; content: any }[] = []
+  const resent: { id: string; text: string; referrer: unknown; session?: string; content: any }[] = []
   const deleted: string[] = []
   const handleOfCalls: unknown[][] = []
   const render = (target: any, content: any) => {
@@ -92,11 +92,8 @@ function harness(keyboard = true) {
       return { bot: 'qq:test', target: { chat: ref.chat }, mode: mode ?? 'text', parts: [{ id: ref.id, kind: kind ?? 'message', time: 0 }], createdAt: Date.now(), edits: 0, content: core.h('message') }
     },
     edit: async () => { throw new Error('qq: the adapter cannot edit messages') },
-    send: async (target: any, content: any) => {
-      const handle = published(content)
-      resent.push({ id: handle.parts[0]!.id, text: core.toText(content), referrer: target.referrer, content })
-      return { handle, report: render(target, content).report }
-    },
+    // Every publication goes through `ctx.im.send`; a direct bot send would skip the store and `im/before-send`.
+    send: async () => { throw new Error('the card service must publish through ctx.im.send') },
     delete: async (handle: any) => { deleted.push(handle.parts[0].id) },
   }
   const ctx: any = {
@@ -107,9 +104,12 @@ function harness(keyboard = true) {
   const im: any = {
     bot: () => bot,
     chat: () => ({ ref: REF }),
-    send: async (_chat: string, content: any) => {
+    send: async (_chat: string, content: any, options: any = {}) => {
       const handle = published(content)
-      sent.push({ id: handle.parts[0]!.id, text: core.toText(content), content })
+      // An answer to a click carries the click's referrer; the first publication of a card carries none.
+      if (options.referrer !== undefined) {
+        resent.push({ id: handle.parts[0]!.id, text: core.toText(content), referrer: options.referrer, session: options.session, content })
+      } else sent.push({ id: handle.parts[0]!.id, text: core.toText(content), content })
       return { status: 'confirmed', handle }
     },
     sessions: { deliver: async () => {} },
@@ -172,6 +172,7 @@ test('QQ: a click resends the card as a passive reply, recalls the old message, 
   assert.equal(h.resent.length, 1, 'the click is answered with the new state')
   assert.match(h.resent[0]!.text, /count 1/)
   assert.deepEqual(h.resent[0]!.referrer, { event_id: 'e1', chatId: REF.id }, 'through the click (a passive reply)')
+  assert.equal(h.resent[0]!.session, 'im-s1', 'under the session that owns the card, through ctx.im.send')
   assert.deepEqual(h.deleted, [first.id], 'the old copy is recalled')
   const record = h.tables.get('cards')!.get(published.id) as any
   assert.equal(record.message, h.resent[0]!.id, 'the card now lives in the new message')
