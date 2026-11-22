@@ -60,6 +60,16 @@ importers:
         specifier: ^26.6.4
         version: 26.6.6
 
+  packages/im-qq-panel:
+    dependencies:
+      zod:
+        specifier: 4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@types/node':
+        specifier: ^26.6.4
+        version: 26.6.6
+
   packages/im-session-auth:
     dependencies:
       zod:

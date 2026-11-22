@@ -1,0 +1,58 @@
+{
+  "name": "dsh-im-qq-panel",
+  "version": "0.1.0",
+  "description": "QQ official bot custom menu and command panels for the DeepSeek Harness IM host: configured sync, panels generated from the bot's commands, management commands, and the group-owner authorization command.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./client": "./client/client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "client",
+    "assets",
+    "guides",
+    "README.md"
+  ],
+  "license": "MIT",
+  "author": "MicroBlock",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/std-microblock/dsh-im-extras.git",
+    "directory": "packages/im-qq-panel"
+  },
+  "keywords": ["deepseek-harness", "dsh", "im", "qq", "qq-bot", "menu", "command-panel"],
+  "dsh": {
+    "client": {
+      "platform": "web"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "build:client": "node ../im-panel/scripts/build-client.mjs .",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json",
+    "test": "node --experimental-transform-types --no-warnings --import ../../scripts/test-resolve.mjs --test --test-timeout=60000 \"test/**/*.test.ts\""
+  },
+  "dependencies": {
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "*",
+    "@deepseek-ai/cordis-plugin-im-core": "*",
+    "@deepseek-ai/dsh-im": "*"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/cordis": { "optional": true },
+    "@deepseek-ai/cordis-plugin-im-core": { "optional": true },
+    "@deepseek-ai/dsh-im": { "optional": true }
+  }
+}
