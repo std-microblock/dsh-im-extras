@@ -59,7 +59,7 @@ declare module '@deepseek-ai/cordis' {
 /** The polish service (`ctx.imPolish`). */
 export class ImPolishService extends Service {
   /** `llm` is read when a send is polished (`ctx.get`), so a deployment without it still checks for repeats. */
-  static inject = ['im', 'storageDomain']
+  static inject = ['im', 'llm', 'storageDomain']
   static Config = Config
 
   readonly host: PolishHost

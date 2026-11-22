@@ -99,7 +99,7 @@ export function dataDirOf(config: Pick<StickersConfig, 'dataDir'>): string {
 /** The sticker service (`ctx.imStickers`). */
 export class ImStickersService extends Service {
   /** `llm`, `attachments` and `http` are read when they are needed (`ctx.get`), so the library works without them. */
-  static inject = ['im', 'storageDomain']
+  static inject = ['im', 'llm', 'storageDomain']
   static Config = Config
 
   readonly library: StickerLibrary
