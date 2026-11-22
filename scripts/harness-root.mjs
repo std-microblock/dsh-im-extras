@@ -6,20 +6,26 @@
 // node_modules, and here they are resolved from a harness checkout that has
 // been built (`pnpm build` in it), by path.
 //
-// `DSH_HARNESS_ROOT` wins when it is set; otherwise the candidates below are
-// tried in order: a sibling deployment checkout that nests the harness as
-// `dsh/`, a sibling harness checkout, and a harness nested in this repository.
-import { existsSync } from 'node:fs'
+// `DSH_HARNESS_ROOT` wins when it is set, then the path in an untracked`n// `.harness-root` file at the repository root; otherwise the candidates below are
+// tried in order: a sibling harness checkout, and one nested in this repository.
+import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 export const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
+/** The path in `.harness-root`, if the file exists. */
+function localRoot() {
+  const file = join(repoRoot, '.harness-root')
+  return existsSync(file) ? readFileSync(file, 'utf8').trim() : undefined
+}
+
 /** Every path that would make a usable harness checkout. */
 export function candidates() {
   return [
     process.env.DSH_HARNESS_ROOT,
-    join(repoRoot, '..', 'toc-agent', 'dsh'),
+    localRoot(),
+    join(repoRoot, '..', 'deepseek-harness'),
     join(repoRoot, '..', 'dsh'),
     join(repoRoot, 'dsh'),
   ]

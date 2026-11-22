@@ -2,7 +2,7 @@
 
 - Run `pnpm build` / `pnpm typecheck` / `pnpm test` from the repository root: `tsconfig.harness.json` is generated
   there by `scripts/harness-tsconfig.mjs` and points the `@deepseek-ai/*` peers at a built harness checkout
-  (`DSH_HARNESS_ROOT`, or `../toc-agent/dsh`, `../dsh`).
+  (`DSH_HARNESS_ROOT`, a `.harness-root` file, or `../deepseek-harness`, `../dsh`).
 - `dist/` and the browser bundles are build output and are not committed.
 - Packages couple only through the harness interfaces and each other's public exports. Commit as `scope: message`, the
   scope being the package directory (`im-card:`, `im-dispatch:` …) or `repo:` for root files.

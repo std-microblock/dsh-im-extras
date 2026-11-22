@@ -38,7 +38,8 @@ pnpm test
 
 `scripts/harness-tsconfig.mjs` (run by `build` and `typecheck`) writes `tsconfig.harness.json`, which maps every
 `@deepseek-ai/*` import to the declarations of that checkout. It uses `DSH_HARNESS_ROOT` when set, otherwise the first
-built checkout among `../toc-agent/dsh`, `../dsh` and `./dsh`. Tests resolve the same checkout through
+path in an untracked `.harness-root` file, otherwise the first built checkout among `../deepseek-harness`,
+`../dsh` and `./dsh`. Tests resolve the same checkout through
 `scripts/test-resolve.mjs`.
 
 ## Mounting

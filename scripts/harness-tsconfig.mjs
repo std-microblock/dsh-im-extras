@@ -2,9 +2,8 @@
 // are type-checked against, pointing into this machine's harness checkout.
 //
 // Why a generated file instead of a committed one: the harness packages are not
-// on a registry, so their location is a property of the machine (here
-// `D:\dsh\toc-agent\dsh`, on the cloud host `/opt/toc-agent/dsh`), not of the
-// repository. Every package's `tsconfig.json` extends the generated file
+// on a registry, so their location is a property of the machine (see
+// `harness-root.mjs`), not of the repository. Every package's `tsconfig.json` extends the generated file
 // alongside `tsconfig.base.json`:
 //
 //     "extends": ["../../tsconfig.base.json", "../../tsconfig.harness.json"]
