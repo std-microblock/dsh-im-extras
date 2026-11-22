@@ -18,7 +18,7 @@ export type PropsWithChildren<P = {}> = P & { children?: Child }
 
 /** Who clicked and what the button carried. */
 export interface ClickEvent {
-  /** The clicker: `id` is the Feishu open_id (show it with `<at type="user" id={e.user.id} />`; `name` is usually absent). */
+  /** The clicker: `id` is the platform user id (show it with `<at type="user" id={e.user.id} />`; `name` is usually absent). */
   user: { id: string; name?: string }
   /** The button's `data` attribute, when it has one. */
   data?: string
@@ -30,7 +30,7 @@ export interface ClickEvent {
 
 /** Who picked and what they chose in a `<select>`. */
 export interface SelectEvent {
-  /** The person who picked: `id` is the Feishu open_id. */
+  /** The person who picked: `id` is the platform user id. */
   user: { id: string; name?: string }
   /** Chosen option values: one for a single select, all of them for a `multiple` one. */
   values: string[]
@@ -42,7 +42,7 @@ export interface SelectEvent {
 
 /** Who toggled a checkbox, and its state after the toggle. */
 export interface CheckEvent {
-  /** The person who toggled it: `id` is the Feishu open_id. */
+  /** The person who toggled it: `id` is the platform user id. */
   user: { id: string; name?: string }
   /** The state after the toggle. */
   checked: boolean
@@ -143,6 +143,26 @@ export interface CardHandle {
   close(): void
   /** Deliver a message to the agent that published the card (rate limited; call it from clicks). */
   send(text: string): SendResult
+  /** What the chat platform can do with this card; adapt the layout when a capability is missing. */
+  readonly platform: CardPlatform
+}
+
+/**
+ * What the chat platform can do with a card. Lark: everything. QQ (markdown with a keyboard): no in-place edits (a
+ * click that changes the card resends it; timers never refresh it), no forms, no toasts, at most 5 × 5 buttons with
+ * labels of at most 10 characters.
+ */
+export interface CardPlatform {
+  /** Platform name: `lark`, `feishu`, `qq` … */
+  readonly name: string
+  /** The card is edited in place; otherwise a click that changes it resends it and nothing else refreshes it. */
+  readonly edit: boolean
+  /** Action buttons can be clicked; otherwise they show as text and readers answer by replying. */
+  readonly buttons: boolean
+  /** `<form>`, `<input>` and `<select>` render natively. */
+  readonly forms: boolean
+  /** `toast()` is shown to the clicker. */
+  readonly toast: boolean
 }
 
 type SetState<S> = (value: S | ((previous: S) => S)) => void
@@ -178,14 +198,14 @@ type ButtonVariant =
 // ---------------------------------------------------------------------------------------------------------------
 
 /**
- * Who may use a quick reply: an open_id, `'requester'` (default — the person whose message the card answers) or
+ * Who may use a quick reply: a platform user id, `'requester'` (default — the person whose message the card answers) or
  * `'anyone'`. A card with no known requester admits everyone.
  */
 export type PromptSender = 'requester' | 'anyone' | (string & {})
 
 /** The person a quick reply is addressed to. */
 export interface PromptTarget {
-  /** `'requester'` (default), `'anyone'`, or one person's open_id. */
+  /** `'requester'` (default), `'anyone'`, or one person's platform user id. */
   sender?: PromptSender
   /** How that person is named in toasts and in the line a used control leaves (default: their name). */
   senderName?: string
@@ -372,12 +392,12 @@ export declare const AuthRequest: (props: AuthRequestProps) => JSX.Element
 /** Presentation shared by every button. */
 interface ButtonStyle {
   theme?: Theme
-  /** Exact Feishu button type; wins over `theme`. */
+  /** Exact Lark button type; wins over `theme` (other platforms map `theme`). */
   variant?: ButtonVariant
   size?: 'tiny' | 'small' | 'medium' | 'large'
   /** `default` (fits the label), `fill` (the available width) or pixels. */
   width?: 'default' | 'fill' | number
-  /** Feishu standard icon token, e.g. `done_outlined`. */
+  /** Lark standard icon token, e.g. `done_outlined` (ignored where the platform has no button icons). */
   icon?: string
   /** Confirmation dialog before the click takes effect. */
   confirm?: { title: string; text: string }
@@ -482,7 +502,7 @@ declare global {
     interface Element { readonly $$vnode: true }
     interface ElementChildrenAttribute { children: {} }
     interface IntrinsicAttributes { key?: string | number }
-    /** Exactly the elements a Feishu card renders; anything else is a type error. */
+    /** Exactly the elements a card may contain; anything else is a type error (each platform renders them its way). */
     interface IntrinsicElements {
       message: WithChildren
       /** Card header; `theme` colors it. */

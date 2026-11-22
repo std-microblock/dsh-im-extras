@@ -2,7 +2,7 @@
   "name": "dsh-im-card",
   "version": "0.1.0",
   "private": true,
-  "description": "Interactive Feishu cards written as React-like TSX: a QuickJS VM per card, hooks, click callbacks, whole-VM snapshots that survive restarts, the im_send_card tool and satori-tsx blocks inside the streamed summary message.",
+  "description": "Interactive IM cards for Lark and QQ written as React-like TSX: a QuickJS VM per card, hooks, click callbacks, whole-VM snapshots that survive restarts, the im_send_card tool and satori-tsx blocks inside the streamed summary message.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

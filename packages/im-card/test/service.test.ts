@@ -6,8 +6,9 @@ import { join } from 'node:path'
 import test from 'node:test'
 import { bundleCard } from '../src/bundle.ts'
 import { CardService, CARD_BUTTON_PREFIX, requesterFrom } from '../src/service.ts'
+import { vendor } from './vendor.ts'
 
-const core = await import('file:///D:/dsh/toc-agent/dsh/vendor/plugin-im-core/lib/index.js')
+const core = await vendor('plugin-im-core')
 
 const CHAT = 'lark:test|oc_1'
 const COUNTER = `
@@ -43,9 +44,16 @@ function harness() {
   const edits: { id: string; text: string }[] = []
   const deliveries: any[] = []
   let seq = 0
+  const handleOfCalls: { id: string; mode?: string; kind?: string }[] = []
   const bot = {
     id: 'lark:test',
-    handleOf: (ref: any, mode: string) => ({ bot: 'lark:test', target: { chat: ref.chat }, mode, parts: [{ id: ref.id, kind: 'card-inline', time: 0 }], createdAt: 0, edits: 0, content: core.h('message') }),
+    platform: 'lark',
+    // An adapter that edits in place: the card service probes this hook.
+    editPayload: async () => {},
+    handleOf: (ref: any, mode: string, kind: string) => {
+      handleOfCalls.push({ id: ref.id, mode, kind })
+      return { bot: 'lark:test', target: { chat: ref.chat }, mode, parts: [{ id: ref.id, kind: kind ?? 'card-inline', time: 0 }], createdAt: 0, edits: 0, content: core.h('message') }
+    },
     edit: async (handle: any, content: any) => {
       edits.push({ id: handle.parts[0].id, text: core.toText(content) })
       return { handle, report: {} }
@@ -69,7 +77,7 @@ function harness() {
     history: { latest: () => undefined, before: () => [], after: () => [], get: () => undefined },
   }
   const emit = (name: string, event: any) => { for (const fn of listeners.get(name) ?? []) fn(event) }
-  return { ctx, im, sent, edits, deliveries, emit, tables }
+  return { ctx, im, sent, edits, deliveries, emit, tables, handleOfCalls }
 }
 
 function buttonsOf(content: any): string[] {
@@ -146,6 +154,8 @@ test('publish, click, toast, edit, persist, restart, click again, close', async 
   click(inc!)
   await wait(500)
   assert.match(h.edits.at(-1)!.text, /count 2/, 'state survived the restart and the old token still works')
+  assert.deepEqual(h.handleOfCalls.at(-1), { id: h.sent[0].id, mode: 'card', kind: 'card-inline' },
+    'the handle is rebuilt in the mode and part kind the publication reported')
 
   click(finish!)
   await wait(600)

@@ -21,6 +21,7 @@ import { createRequire } from 'node:module'
 import { constants, zstdCompressSync, zstdDecompressSync } from 'node:zlib'
 import { QuickJS, type JSValueHandle } from 'quickjs-wasi'
 import type { CardBundle } from './bundle.ts'
+import type { CardPlatform } from './platform.ts'
 
 /** One node of a rendered card tree, as the runtime emits it. */
 export interface CardNode {
@@ -96,6 +97,8 @@ export interface CardVmLimits {
 export interface CardContext {
   /** The person whose message the card answers: the default owner of its quick replies. */
   requester?: { id: string; name?: string }
+  /** What the chat platform can do with the card (`useCard().platform`); absent means every capability. */
+  platform?: CardPlatform
 }
 
 /** A stored snapshot: compressed XOR delta of the VM memory plus the restore metadata. */
@@ -119,7 +122,7 @@ const require = createRequire(import.meta.url)
  *
  * The published layout is `dist/engine.js` next to `dist/vm/runtime.js`. Running from source — the tests import
  * `src/engine.ts` directly — there is no `src/vm/runtime.js`: the runtime is the TypeScript project in `src/vm/` and
- * only exists as a bundle, so the build output is used. Both are written by `scripts/vm-build.mjs`.
+ * only exists as a bundle, so the build output is used. Both are written by `scripts/build-vm.mjs`.
  * @throws Error naming the build when neither exists.
  */
 function runtimeSource(): string {

@@ -4,6 +4,7 @@
  *
  * @module dsh-im-card/vm/actions
  */
+import { g, type CardPlatform } from './globals.ts'
 import { host } from './host.ts'
 
 /** Result of a message to the agent. */
@@ -23,6 +24,28 @@ export interface CardHandle {
   close(): void
   /** Send a message to the agent that published the card. */
   send(text: unknown): SendResult
+  /** What the chat platform can do with this card: edit it in place, click its buttons, render forms, show toasts. */
+  readonly platform: CardPlatform
+}
+
+/** The capabilities a card assumes when the host published none. */
+const FULL_PLATFORM: CardPlatform = { name: 'unknown', edit: true, buttons: true, forms: true, toast: true }
+
+/**
+ * What the chat platform can do with this card, as the host published it in `__cardContext.platform`.
+ * @returns the capabilities; every one of them when the host published nothing.
+ */
+export function platform(): CardPlatform {
+  const context = g.__cardContext
+  const given = context !== undefined && context !== null && typeof context === 'object' ? context.platform : undefined
+  if (given === undefined || given === null || typeof given !== 'object') return FULL_PLATFORM
+  return {
+    name: typeof given.name === 'string' ? given.name : 'unknown',
+    edit: given.edit !== false,
+    buttons: given.buttons !== false,
+    forms: given.forms !== false,
+    toast: given.toast !== false,
+  }
 }
 
 /**
@@ -61,10 +84,13 @@ export const cardHandle: CardHandle = {
     host('close', '')
   },
   send,
+  get platform() {
+    return platform()
+  },
 }
 
 /**
- * The card itself: `toast`, `close` and `send`.
+ * The card itself: `toast`, `close`, `send` and the `platform` it is shown on.
  * @returns the handle of the card being rendered.
  */
 export function useCard(): CardHandle {

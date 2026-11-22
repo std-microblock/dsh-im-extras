@@ -5,9 +5,14 @@
  * `stepper`) are drawn above it and keep their values in the component's own state; the native controls' values arrive
  * with the submit click. Either way the result is one text: `prompt` with `{name}` placeholders, or `标签：值` pairs.
  *
+ * A platform without form controls (QQ: markdown and a keyboard) gets the same form made of buttons: a `select` becomes a
+ * row of options, a `checkbox` a switch, and a text field asks for a chat reply (with a keyboard button that fills the
+ * input box where the platform has one); the submit is an action button. A platform whose buttons cannot be clicked
+ * at all gets the fields as a reply template.
+ *
  * @module dsh-im-card/vm/presets/form
  */
-import { cardHandle } from '../actions.ts'
+import { cardHandle, platform } from '../actions.ts'
 import { useState } from '../hooks.ts'
 import { h, type VNode } from '../jsx.ts'
 import { Stepper, Segmented, Switch } from './controls.tsx'
@@ -213,12 +218,23 @@ export function PromptForm(props: PromptFormProps) {
     return [doneLine('✅ 已提交', '', used.who), <small>{answer}</small>]
   }
 
+  const shown = platform()
+  if (!shown.buttons) return replyTemplate(fields, p.submitLabel)
   const blocks: unknown[] = []
   const controls: unknown[] = []
   for (const field of fields) {
-    const type = fieldType(field)
+    let type = fieldType(field)
     const name = String(field.name)
     const label = field.label === undefined ? undefined : String(field.label)
+    if (FORM_FIELD_TYPES.indexOf(type) >= 0 && !shown.forms) {
+      // No native form controls: the field is drawn with buttons, or asks for a chat reply.
+      if (type === 'select') type = 'radio'
+      else if (type === 'checkbox') type = 'switch'
+      else {
+        blocks.push(...textPrompt(field, name, label))
+        continue
+      }
+    }
     if (FORM_FIELD_TYPES.indexOf(type) >= 0) {
       controls.push(formControl(field, type, name, label, choose))
       continue
@@ -275,7 +291,56 @@ export function PromptForm(props: PromptFormProps) {
     width: 'fill',
     variant: p.variant === undefined ? 'primary_filled' : p.variant,
   })
-  controls.push(<button {...submitAttrs}>{p.submitLabel === undefined ? '提交' : String(p.submitLabel)}</button>)
+  const submitLabel = p.submitLabel === undefined ? '提交' : String(p.submitLabel)
+  if (!shown.forms) {
+    // The values were collected by the buttons above; the submit is a plain action button.
+    submitAttrs.type = 'action'
+    blocks.push(<button {...submitAttrs}>{submitLabel}</button>)
+    return blocks
+  }
+  controls.push(<button {...submitAttrs}>{submitLabel}</button>)
   blocks.push(<form name={p.name === undefined ? 'prompt-form' : String(p.name)}>{controls}</form>)
   return blocks
+}
+
+/**
+ * A text field on a platform without form controls: its caption, a line asking for a chat reply, and a keyboard button
+ * that puts the caption into the reader's input box.
+ * @param field - the field definition.
+ * @param name - its form key.
+ * @param label - its caption, when it has one.
+ */
+function textPrompt(field: PromptField, name: string, label: string | undefined): VNode[] {
+  const caption = label === undefined ? name : label
+  const hint = field.placeholder === undefined ? '' : '（' + String(field.placeholder) + '）'
+  return [
+    <p>
+      <b>{caption}</b>
+      {'：请直接在聊天中回复' + hint}
+    </p>,
+    <button type="input" text={caption + '：'}>
+      {'填写' + caption}
+    </button>,
+  ]
+}
+
+/**
+ * The form as a reply template, for a platform whose buttons cannot be clicked: one line per field.
+ * @param fields - the fields, in order.
+ * @param submitLabel - what the submit would have said.
+ */
+function replyTemplate(fields: PromptField[], submitLabel: string | undefined): unknown[] {
+  const lines = fields.map((field) => {
+    const caption = field.label === undefined ? String(field.name) : String(field.label)
+    const options = Array.isArray(field.options)
+      ? '（' + field.options.map((option) => typeof option === 'object' && option !== null
+        ? String(option.label === undefined ? option.value : option.label)
+        : String(option)).join(' / ') + '）'
+      : ''
+    return <li>{caption + '：' + options}</li>
+  })
+  return [
+    <p>{'请按下面的格式直接回复' + (submitLabel === undefined ? '' : '（' + submitLabel + '）') + '：'}</p>,
+    <ul>{lines}</ul>,
+  ]
 }

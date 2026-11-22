@@ -4,10 +4,7 @@
  * @module dsh-im-card/tools
  */
 import type { Context } from '@deepseek-ai/cordis'
-import { ImError, type ImApi, type ImChatKey, type ImMessageKey } from '@deepseek-ai/dsh-im'
-// The entry re-exports only types, so the key and request-id helpers come from the published `./src/*` subpaths.
-import { splitKey } from '@deepseek-ai/dsh-im/src/api.ts'
-import { operationId } from '@deepseek-ai/dsh-im/src/send.ts'
+import { ImError, operationId, splitKey, type ImApi, type ImChatKey, type ImMessageKey } from '@deepseek-ai/dsh-im'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import { defineTool, type ParameterSchemaSpec, type ToolRunContext, type ValueSchemaSpec } from '@deepseek-ai/dsh-tools'
@@ -29,6 +26,11 @@ const output = {
       },
       message: { type: 'string', description: 'Key of the published message.' },
       error: { type: 'string' },
+      notes: {
+        type: 'array', items: { type: 'string' },
+        description: 'What the chat platform cannot do with this card (no in-place edits, unclickable buttons, no form '
+          + 'controls or toasts) and what the card lost when rendered there. Adapt the card when it matters.',
+      },
     },
   }, {
     type: 'object',
@@ -99,7 +101,9 @@ export function applyCardTool(ctx: Context, im: ImApi, cards: CardService): void
       + 'failure comes back with its reason and nothing reaches the chat. Use test: true while developing a card: it '
       + 'goes to the test chat instead of the conversation (or, without one, is only checked), so failed attempts '
       + 'never clutter the chat. Clicks run its handlers, state changes update the card in place, and the card '
-      + 'survives restarts. Returns the card id (for im_update_card).',
+      + 'survives restarts. Platforms differ (Lark edits cards in place and answers clicks with toasts; QQ shows markdown '
+      + 'with a keyboard, cannot edit, and has no forms): the result notes say what this chat cannot do. Returns the '
+      + 'card id (for im_update_card).',
     parameters: {
       path: { type: 'string', required: true, description: 'Entry .tsx file, relative to your working directory.' },
       props: { type: 'json', description: 'JSON props passed to the default-exported component.' },
@@ -121,16 +125,18 @@ export function applyCardTool(ctx: Context, im: ImApi, cards: CardService): void
           // A rehearsal is checked against the chat it would really go to; the test chat is an operator setting, so
           // it needs no grant of this session.
           const real = chatOf(im, session, args.chat)
-          await cards.rehearse({ bundle, props, chat: testChat ?? real, cwd })
-          if (testChat === undefined) return { card: '', status: 'checked' as const }
+          const { notes } = await cards.rehearse({ bundle, props, chat: testChat ?? real, cwd })
+          const noted = notes.length === 0 ? {} : { notes }
+          if (testChat === undefined) return { card: '', status: 'checked' as const, ...noted }
           const published = await cards.publish({ bundle, props, session, chat: testChat, grant: false, cwd })
           return {
             card: published.id, status: published.status === 'confirmed' ? 'test' as const : published.status,
             ...published.error === undefined ? {} : { error: published.error },
+            ...noted,
           }
         }
         const chat = chatOf(im, session, args.chat)
-        await cards.rehearse({ bundle, props, chat, cwd })
+        const { notes } = await cards.rehearse({ bundle, props, chat, cwd })
         const quote = args.quote === undefined ? undefined : quoteOf(im, chat, args.quote)
         const published = await cards.publish({
           bundle, props, session, chat, cwd,
@@ -141,6 +147,7 @@ export function applyCardTool(ctx: Context, im: ImApi, cards: CardService): void
           card: published.id, status: published.status,
           ...published.message === undefined ? {} : { message: published.message },
           ...published.error === undefined ? {} : { error: published.error },
+          ...notes.length === 0 ? {} : { notes },
         }
       } catch (error) {
         return cardError(error)

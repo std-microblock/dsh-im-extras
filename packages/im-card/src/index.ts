@@ -1,5 +1,5 @@
 /**
- * `dsh-im-card`: interactive Feishu cards written as React-like TSX.
+ * `dsh-im-card`: interactive IM cards (Lark, QQ) written as React-like TSX.
  *
  * - `ctx.imCards` runs every card: one QuickJS VM per card, hooks, click callbacks, timers, `agent.send`, a data
  *   folder (`fs`, `useStoredState`) and bounded `fetch`, whole-VM snapshots that survive restarts (see `service.ts`).
@@ -43,8 +43,9 @@ export {
 } from './engine.ts'
 export { GUIDANCE, GUIDANCE_ORDER, GUIDANCE_SECTION } from './guidance.ts'
 export { cardFetch, type FetchLimits } from './http.ts'
+export { FULL_PLATFORM, platformNotes, probePlatform, type CardPlatform } from './platform.ts'
 export {
-  CARD_BUTTON_PREFIX, CardService, requesterFrom, type RequesterSender, type CardActionContext,
+  CARD_BUTTON_PREFIX, CardService, reportNotes, requesterFrom, routedId, type RequesterSender, type CardActionContext,
   type CardActionHandler, type CardGuardContext, type CardGuardResult, type CardInteractionGuard,
 } from './service.ts'
 export { TurnCardSet, type TurnCards } from './turn.ts'

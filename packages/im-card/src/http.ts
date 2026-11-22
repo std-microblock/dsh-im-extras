@@ -40,7 +40,7 @@ const HEADER_NAME = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/
 /**
  * Perform one card request.
  * @param request - URL, method, headers and body as the card sent them.
- * @param limits - reachability and size rules of this deployment.
+ * @param limits - reachability and size rules the operator configured.
  * @returns the response, or the reason the request did not happen or failed.
  */
 export async function cardFetch(request: CardFetchRequest, limits: FetchLimits): Promise<CardFetchResult> {

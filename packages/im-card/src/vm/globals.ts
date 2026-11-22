@@ -16,6 +16,22 @@
 export interface CardContext {
   /** The person whose message the card answers: the default owner of its quick replies. */
   requester?: { id: string; name?: string }
+  /** What the chat platform can do with the card; absent means every capability. */
+  platform?: CardPlatform
+}
+
+/** What the chat platform can do with a card (the host's `platform.ts`). */
+export interface CardPlatform {
+  /** Platform name of the bot (`lark`, `feishu`, `qq` …). */
+  name: string
+  /** Published messages can be edited in place. */
+  edit: boolean
+  /** Action buttons are clickable. */
+  buttons: boolean
+  /** `<form>`, `<input>` and `<select>` render as native controls. */
+  forms: boolean
+  /** A click can be answered with a toast. */
+  toast: boolean
 }
 
 /** `console` inside the VM: every line goes out as the host's `log` op. */

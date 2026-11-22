@@ -59,6 +59,17 @@ export interface CardsConfig {
    */
   testChat?: string
   /**
+   * Resends one card may make per 5 minutes on a platform that cannot edit a sent message (QQ): each click that
+   * changes the card recalls the old message and answers with a new one, and the platform grants few replies per event.
+   * A click beyond the bound changes the card's state without republishing it. Unset: 5.
+   */
+  replaceLimit?: number
+  /**
+   * What a `card.toast()` becomes on a platform that cannot answer a click with a toast (QQ): `ignore` (default) drops
+   * it, `text` sends it as a one-line reply to the click (which spends one of the click's few replies).
+   */
+  toastFallback?: 'ignore' | 'text'
+  /**
    * Text of the quick-reply guidance the model reads in its system prompt (the prebuilt components and when to use
    * them). Unset ships the built-in text; an empty string leaves the section out.
    */
@@ -86,6 +97,8 @@ export const Config = z.object({
   fetchConcurrent: z.natural().min(1).default(3),
   fetchHosts: z.array(z.string()).default([]),
   fetchAllowPrivate: z.boolean().default(false),
+  replaceLimit: z.natural().min(1).default(5),
+  toastFallback: z.union(['ignore', 'text']).default('ignore'),
   testChat: z.string(),
   guidance: z.string(),
 })

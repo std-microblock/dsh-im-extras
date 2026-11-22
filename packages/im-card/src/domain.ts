@@ -8,6 +8,7 @@ import { z } from 'zod'
 import { defineDomain, domainTable, type Domain } from '@deepseek-ai/dsh-storage-domain'
 import type { CardBundle } from './bundle.ts'
 import type { CardSnapshot } from './engine.ts'
+import type { CardPlatform } from './platform.ts'
 
 /** Where a card lives: a standalone message, or a slot inside a streamed turn message. */
 export type CardPlacement =
@@ -25,6 +26,16 @@ export interface CardRecord {
   message?: string
   /** Bot id of that message. */
   bot?: string
+  /**
+   * Mode the message was published in and the kind of its part, as the publication's handle reported them: an edit
+   * after a restart rebuilds the handle in them (Lark `card` / `card-inline`, QQ `markdown` / `message` …).
+   */
+  mode?: string
+  partKind?: string
+  /** When that message was published (epoch ms): the recall window of a platform that resends is counted from it. */
+  sentAt?: number
+  /** What the chat platform could do with the card when it was published. */
+  platform?: CardPlatform
   placement: CardPlacement
   bundle: CardBundle
   props: unknown
@@ -54,6 +65,11 @@ export interface HostRecord {
   chat: string
   bot: string
   message: string
+  /** Mode and part kind of that message (see {@link CardRecord.mode}). */
+  mode?: string
+  partKind?: string
+  /** When that message was published (epoch ms). */
+  sentAt?: number
   /** The message content as JSON element tree, with `<dsh-card-slot index>` placeholders where cards go. */
   content: unknown
   cards: string[]
@@ -69,12 +85,20 @@ const snapshotSchema = z.object({
   contextPtr: z.number(),
 })
 
+const platformSchema = z.object({
+  name: z.string(), edit: z.boolean(), buttons: z.boolean(), forms: z.boolean(), toast: z.boolean(),
+})
+
 const cardSchema = z.looseObject({
   id: z.string(),
   session: z.string(),
   chat: z.string(),
   message: z.exactOptional(z.string()),
   bot: z.exactOptional(z.string()),
+  mode: z.exactOptional(z.string()),
+  partKind: z.exactOptional(z.string()),
+  sentAt: z.exactOptional(z.number()),
+  platform: z.exactOptional(platformSchema),
   placement: z.union([
     z.object({ kind: z.literal('message') }),
     z.object({ kind: z.literal('slot'), host: z.string(), index: z.number().int().nonnegative() }),
@@ -101,6 +125,9 @@ const hostSchema = z.looseObject({
   chat: z.string(),
   bot: z.string(),
   message: z.string(),
+  mode: z.exactOptional(z.string()),
+  partKind: z.exactOptional(z.string()),
+  sentAt: z.exactOptional(z.number()),
   content: z.unknown(),
   cards: z.array(z.string()),
   createdAt: z.number(),

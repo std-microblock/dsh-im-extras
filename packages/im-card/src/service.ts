@@ -24,20 +24,29 @@
  * to `cards.dataDir`, see `data.ts`) and `fetch` (bounded by the request rules of `http.ts`). Both are synchronous
  * host calls except a request, whose answer arrives later and is settled back into the VM.
  *
- * Clicks are answered in time: Feishu wants an answer within 3 s, so a click gets its toast (or nothing) through
- * `ButtonEvent.respond` before the message is edited, as the platform requires.
+ * Clicks are answered in time: a platform that answers card callbacks (Lark wants an answer within 3 s) gets the
+ * click's toast (or nothing) through `ButtonEvent.respond` before the message is edited, as it requires. A platform
+ * without `respond` (QQ) gets no toast, or a one-line reply when `toastFallback` is `text`.
  *
+ * Platforms differ in what they can do with a published card (`platform.ts`). Where messages cannot be edited (QQ), a
+ * card changed by a click is republished by recalling the old message (when the platform still allows it) and
+ * answering the click with a new one, through the click's referrer (a passive reply). The card then lives in the new
+ * message; clicks on an older copy are refused, and nothing republishes it outside a click — a timer or a request that
+ * changed it shows with the next click. Those resends are bounded per card (`replaceLimit` per 5 minutes), because the
+ * platform grants few replies per event. *
  * @module dsh-im-card/service
  */
 import { randomBytes } from 'node:crypto'
 import { isAbsolute, join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
-import { directive, EXPRESSIVE_DIRECTIVE, h, type Element, type MessageHandle } from '@deepseek-ai/cordis-plugin-im-core'
 import {
+  directive, EXPRESSIVE_DIRECTIVE, h, INTERACTION_DROPPED, type Bot, type ChatRef, type Child, type Element, type MessageHandle,
+  type RenderReport, type Target,
+} from '@deepseek-ai/cordis-plugin-im-core'
+import {
+  ImChatKey, ImMessageKey, splitKey,
   type ImApi, type ImButtonEvent, type ImCheckEvent, type ImSelectEvent, type ImSendResult,
 } from '@deepseek-ai/dsh-im'
-// The entry re-exports only types, so the key constructors come from the package's published `./src/*` subpath.
-import { ImChatKey, ImMessageKey, splitKey } from '@deepseek-ai/dsh-im/src/api.ts'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { CardBundle } from './bundle.ts'
 import { normalizePath } from './bundle.ts'
@@ -49,6 +58,7 @@ import {
   type CardFilesRequest, type CardNode, type CardVm, type CardVmHost,
 } from './engine.ts'
 import { cardFetch } from './http.ts'
+import { botEdits, FULL_PLATFORM, platformNotes, probePlatform, type CardPlatform } from './platform.ts'
 import { cardElements, CardTreeError } from './tree.ts'
 
 /** Prefix of every card button id: `dsh:card:<cardId>:<token>`. */
@@ -67,8 +77,14 @@ const REQUESTER_WINDOW = 12
 
 /** What the card VM knows about its audience, from the stored record. */
 function contextOf(record: CardRecord): CardContext {
-  return record.requester === undefined ? {} : { requester: record.requester }
+  return {
+    ...record.requester === undefined ? {} : { requester: record.requester },
+    ...record.platform === undefined ? {} : { platform: record.platform },
+  }
 }
+
+/** The window over which {@link CardsConfig.replaceLimit} counts the resends of one card. */
+const REPLACE_WINDOW_MS = 5 * 60_000
 
 /** The sender fields that decide whether a card can answer someone. */
 export interface RequesterSender {
@@ -131,6 +147,18 @@ export type CardGuardResult = { ok: true } | { ok: false; toast: string }
 /** Guard checked before any click, select, or checkbox toggle enters a card VM. */
 export type CardInteractionGuard = (context: CardGuardContext) => CardGuardResult
 
+/** An interaction a card answers. */
+type Interaction = ImButtonEvent | ImSelectEvent | ImCheckEvent
+
+/** Where a card or host record keeps the message that shows it. */
+interface MessagePointer {
+  message?: string
+  bot?: string
+  mode?: string
+  partKind?: string
+  sentAt?: number
+}
+
 /** A card the turn renderer embeds: its id and the elements of its latest render. */
 export interface SlotCard {
   id: string
@@ -151,6 +179,8 @@ interface Live {
   snapshotTimer: NodeJS.Timeout | undefined
   /** The interaction being handled (a click or a pick), for toasts. */
   click: ImButtonEvent | ImSelectEvent | ImCheckEvent | undefined
+  /** The last interaction handled: a `close()` it caused answers it where the platform cannot edit. */
+  lastClick: ImButtonEvent | ImSelectEvent | ImCheckEvent | undefined
   toasts: { content: string; type: string }[]
   agentCalls: number[]
   /** In-flight `fetch` requests of this card, by request id. */
@@ -158,6 +188,11 @@ interface Live {
   /** Times of this card's recent `fetch` calls, for the per-minute bound. */
   fetches: number[]
   lastUsed: number
+  /**
+   * The elements changed since the message last showed them, and the platform cannot edit it outside a click: the next
+   * click republishes them.
+   */
+  unpublished: boolean
 }
 
 /** The owner of every card of this process. */
@@ -179,6 +214,12 @@ export class CardService {
   private readonly actions = new Map<string, CardActionHandler>()
   /** Interaction guards checked before entering a card VM. */
   private readonly guards = new Set<CardInteractionGuard>()
+  /** Probed platform capabilities, per bot and chat type. */
+  private readonly platforms = new Map<string, Promise<CardPlatform>>()
+  /** Whether a bot's clicks carried a way to answer them (`respond`), learned from the clicks. */
+  private readonly answers = new Map<string, boolean>()
+  /** Times of the recent resends of one card or host message on a platform that cannot edit, by its owner id. */
+  private readonly replaced = new Map<string, number[]>()
   private disposed = false
 
   private readonly ctx: Context
@@ -196,7 +237,7 @@ export class CardService {
     this.domain = await this.ctx.storageDomain.open(imCardsDomain)
     this.engine = await CardEngine.create({ memoryBytes: this.config.memoryBytes, cpuMs: this.config.cpuMs })
     this.ctx.on('im/button', (event) => {
-      if (this.disposed || !event.id.startsWith(CARD_BUTTON_PREFIX)) return
+      if (this.disposed || routedId(event) === undefined) return
       // The click is answered (with its toast) after the VM ran, which is asynchronous: claim the answer now, while
       // the platform still waits for intake.
       event.raw.defer?.()
@@ -205,14 +246,14 @@ export class CardService {
       })
     })
     this.ctx.on('im/select', (event) => {
-      if (this.disposed || !event.id.startsWith(CARD_BUTTON_PREFIX)) return
+      if (this.disposed || routedId(event) === undefined) return
       event.raw.defer?.()
       void this.select(event).catch((error: unknown) => {
         this.ctx.logger.warn('card select %s failed: %s', event.id, error instanceof Error ? error.stack : String(error))
       })
     })
     this.ctx.on('im/check', (event) => {
-      if (this.disposed || !event.id.startsWith(CARD_BUTTON_PREFIX)) return
+      if (this.disposed || routedId(event) === undefined) return
       event.raw.defer?.()
       void this.check(event).catch((error: unknown) => {
         this.ctx.logger.warn('card check %s failed: %s', event.id, error instanceof Error ? error.stack : String(error))
@@ -316,16 +357,49 @@ export class CardService {
   }
 
   /**
+   * What the platform of a chat can do with a card, probed once per bot and chat type.
+   * @param chat - the chat a card goes to.
+   * @returns the capabilities; every one of them when the chat has no bot to probe.
+   */
+  async platformOf(chat: ImChatKey): Promise<CardPlatform> {
+    let bot: Bot | undefined
+    try {
+      bot = this.im.bot(chat) as Bot | undefined
+    } catch {
+      bot = undefined
+    }
+    if (bot === undefined) return FULL_PLATFORM
+    const ref = this.refOf(chat)
+    const key = `${bot.id}|${ref.type}`
+    let probe = this.platforms.get(key)
+    if (probe === undefined) {
+      probe = probePlatform(bot, { chat: ref })
+      this.platforms.set(key, probe)
+    }
+    const probed = await probe
+    const answers = this.answers.get(bot.id)
+    return answers === undefined ? probed : { ...probed, toast: answers }
+  }
+
+  /** The platform reference of a chat: the stored one, or one rebuilt from its key. */
+  private refOf(chat: ImChatKey): ChatRef {
+    return this.im.chat(chat)?.ref ?? { id: splitKey(chat).id, type: 'group' as const }
+  }
+
+  /**
    * Dry-run a card exactly as {@link publish} would send it: start it, render it, validate the tree and run the
    * platform's own rendering and limit checks for the target chat — no message is sent and no card is stored.
    * @param request - bundle, props, the chat it would go to, and the working directory its data folder sits in.
+   * @returns what the model should know before it publishes: the platform's limits and what this card loses there
+   *   (`notes`, empty when it renders as written).
    * @throws CardTreeError / Error with the reason a real publication would fail.
    */
-  async rehearse(request: { bundle: CardBundle; props: unknown; chat: ImChatKey; cwd?: string }): Promise<void> {
+  async rehearse(request: { bundle: CardBundle; props: unknown; chat: ImChatKey; cwd?: string }): Promise<{ notes: string[] }> {
     const dataDir = this.dataDirOf(request.cwd)
+    const platform = await this.platformOf(request.chat)
     const record: CardRecord = {
       id: 'rehearsal', session: '', chat: request.chat, placement: { kind: 'message' },
-      bundle: request.bundle, props: request.props ?? {}, closed: false, createdAt: 0, updatedAt: 0,
+      bundle: request.bundle, props: request.props ?? {}, closed: false, createdAt: 0, updatedAt: 0, platform,
       ...dataDir === undefined ? {} : { dataDir },
     }
     const requester = this.requesterOf(request.chat)
@@ -337,18 +411,20 @@ export class CardService {
       fetch: () => ({ ok: false, error: 'a card being checked makes no requests' }),
       action: (name, payload) => this.runAction(record, undefined, true, name, payload),
       close() {}, log() {}, error() {},
-    }, requester === undefined ? {} : { requester })
+    }, { ...requester === undefined ? {} : { requester }, platform })
     try {
       const out = vm.render()
       if (!out.ok) throw new CardTreeError(`card render failed: ${out.error}`)
       live.elements = this.elementsOf(record, out.tree)
       const bot = this.im.bot(request.chat)
-      const ref = this.im.chat(request.chat)?.ref ?? { id: splitKey(request.chat).id, type: 'group' as const }
+      const ref = this.refOf(request.chat)
+      let report: RenderReport | undefined
       try {
-        await bot.render({ chat: ref }, h('message', directive(EXPRESSIVE_DIRECTIVE), ...live.elements))
+        report = (await bot.render({ chat: ref }, h('message', directive(EXPRESSIVE_DIRECTIVE), ...live.elements))).report
       } catch (error) {
         throw new CardTreeError(`the chat platform would refuse this card: ${error instanceof Error ? error.message : String(error)}`)
       }
+      return { notes: [...platformNotes(platform), ...reportNotes(report)] }
     } finally {
       vm.dispose()
     }
@@ -376,9 +452,10 @@ export class CardService {
       : undefined
     const requester = request.requester ?? triggerRequester ?? this.requesterOf(request.chat)
     const dataDir = this.dataDirOf(request.cwd)
+    const platform = await this.platformOf(request.chat)
     const record: CardRecord = {
       id, session: request.session, chat: request.chat, placement: { kind: 'message' },
-      bundle: request.bundle, props: request.props ?? {}, closed: false, createdAt: now, updatedAt: now,
+      bundle: request.bundle, props: request.props ?? {}, closed: false, createdAt: now, updatedAt: now, platform,
       ...requester === undefined ? {} : { requester },
       ...dataDir === undefined ? {} : { dataDir },
     }
@@ -390,12 +467,7 @@ export class CardService {
       ...request.thread === undefined ? {} : { thread: request.thread },
       ...request.operationId === undefined ? {} : { operationId: request.operationId },
     })
-    const part = result.handle?.parts[0]
-    if (result.handle !== undefined && part !== undefined) {
-      record.message = part.id
-      record.bot = result.handle.bot
-      this.handles.set(part.id, result.handle)
-    }
+    if (result.handle !== undefined) this.adopt(record, result.handle)
     if (result.status === 'failed') {
       this.drop(id)
       return { id, status: result.status, ...result.error === undefined ? {} : { error: result.error } }
@@ -456,8 +528,10 @@ export class CardService {
       this.live.set(record.id, fresh)
       this.armTimer(fresh)
       await this.table().put(record.id, next)
-      // Buttons of the old render are gone; the message shows the new code's buttons right away.
-      await this.republish(fresh, true)
+      // Buttons of the old render are gone; the message shows the new code's buttons right away (where the platform
+      // cannot edit: by answering the old card's last click, else with the next click).
+      fresh.lastClick = old?.lastClick
+      await this.republish(fresh, true, fresh.lastClick)
       this.save(fresh)
     })
     return { id: record.id }
@@ -497,10 +571,11 @@ export class CardService {
     const now = Date.now()
     const requester = request.requester ?? this.requesterOf(request.chat)
     const dataDir = this.dataDirOf(request.cwd)
+    const platform = await this.platformOf(request.chat)
     const record: CardRecord = {
       id, session: request.session, chat: request.chat,
       placement: { kind: 'slot', host: request.host, index: request.index },
-      bundle: request.bundle, props: request.props ?? {}, closed: false, createdAt: now, updatedAt: now,
+      bundle: request.bundle, props: request.props ?? {}, closed: false, createdAt: now, updatedAt: now, platform,
       ...requester === undefined ? {} : { requester },
       ...dataDir === undefined ? {} : { dataDir },
     }
@@ -545,13 +620,15 @@ export class CardService {
       id: host, chat: ImChatKey(handle.bot, handle.target.chat.id), bot: handle.bot, message: part.id,
       content: JSON.parse(JSON.stringify(content)), cards, createdAt: Date.now(),
     }
+    this.adopt(record, handle)
     await this.hosts().put(host, record)
     for (const id of cards) {
       const card = this.table().get(id)
       if (card === undefined) continue
-      card.message = part.id
-      card.bot = handle.bot
+      this.adopt(card, handle)
       await this.table().put(id, card)
+      const live = this.live.get(id)
+      if (live !== undefined) this.adopt(live.record, handle)
     }
   }
 
@@ -565,6 +642,23 @@ export class CardService {
     return make(SLOT_TAG, { index })
   }
 
+  /**
+   * Point a record at the message a handle published: its id, bot, mode, part kind and time, so the message can be
+   * edited or replaced after a restart in the mode it was published in.
+   * @param record - a card or host record.
+   * @param handle - the publication.
+   */
+  private adopt(record: MessagePointer, handle: MessageHandle): void {
+    const part = handle.parts[0]
+    if (part === undefined) return
+    record.message = part.id
+    record.bot = handle.bot
+    record.mode = handle.mode
+    record.partKind = part.kind
+    record.sentAt = handle.createdAt
+    this.handles.set(part.id, handle)
+  }
+
   // ---------------------------------------------------------------------------------------------------------------
   // Clicks and picks
 
@@ -572,7 +666,7 @@ export class CardService {
   private async click(event: ImButtonEvent): Promise<void> {
     await this.interact('button', event, {
       user: userOf(event),
-      ...event.data === undefined ? {} : { data: event.data },
+      ...buttonData(event) === undefined ? {} : { data: buttonData(event) },
       ...event.values === undefined ? {} : { values: event.values },
       time: event.time,
     })
@@ -612,14 +706,23 @@ export class CardService {
     event: ImButtonEvent | ImSelectEvent | ImCheckEvent,
     payload: Record<string, unknown>,
   ): Promise<void> {
-    const rest = event.id.slice(CARD_BUTTON_PREFIX.length)
+    const rest = (routedId(event) ?? '').slice(CARD_BUTTON_PREFIX.length)
     const at = rest.indexOf(':')
     if (at < 0) return
     const id = rest.slice(0, at)
-    const token = rest.slice(at + 1)
+    // A token is base-36; anything after a further `:` is button data a platform appended (QQ `id:data`).
+    const token = rest.slice(at + 1).split(':')[0]!
     const record = this.table().get(id)
+    // What the platform answers clicks with is learned from the clicks: a toast needs `respond`.
+    const botId = (event as { bot?: { id?: string } }).bot?.id
+    if (botId !== undefined) this.answers.set(botId, typeof event.raw.respond === 'function')
     if (record === undefined || record.closed) {
       await event.raw.respond?.({ toast: { type: 'warning', content: '这张卡片已失效' } })
+      return
+    }
+    if (record.platform?.edit === false && this.isOldCopy(record, event)) {
+      // The card was republished as a new message; the copy that was clicked is no longer the card.
+      await event.raw.respond?.({ toast: { type: 'info', content: '这张卡片已更新，请使用最新的一条' } })
       return
     }
     const actor = userOf(event)
@@ -632,7 +735,7 @@ export class CardService {
         kind,
       })
       if (!verdict.ok) {
-        await event.raw.respond?.({ toast: { type: 'warning', content: verdict.toast } })
+        await this.answer(event, record, { content: verdict.toast, type: 'warning' })
         return
       }
     }
@@ -647,24 +750,70 @@ export class CardService {
       if (revived === 'rerun') {
         // The control belonged to a VM that no longer exists: drop this interaction, show the card with fresh ones.
         await event.raw.respond?.({ toast: { type: 'info', content: '卡片已重新加载，请再试一次' } })
-        await this.republish(live, true)
+        await this.republish(live, true, event)
         return
       }
       live.click = event
+      live.lastClick = event
       live.toasts = []
       const found = live.vm.click(token, payload)
       live.click = undefined
-      const toast = live.toasts.at(-1)
-      await event.raw.respond?.(toast === undefined ? {} : { toast: { type: toastType(toast.type), content: toast.content } })
+      await this.answer(event, live.record, live.toasts.at(-1))
       if (!found) {
         // A stale control of an older render: show the current one.
-        if (kind !== 'select') await this.republish(live, true)
+        if (kind !== 'select') await this.republish(live, true, event)
         return
       }
       this.touch(live)
-      if (live.dirty) await this.rerender(live)
+      if (live.dirty || live.unpublished) await this.rerender(live, false, event)
       this.save(live)
     })
+  }
+
+  /**
+   * Answer a click: with its toast where the platform answers clicks, else (`toastFallback: text`) with a one-line
+   * reply, else not at all.
+   * @param event - the click.
+   * @param record - the card it hit.
+   * @param toast - the toast the handler showed last, if any.
+   */
+  private async answer(
+    event: ImButtonEvent | ImSelectEvent | ImCheckEvent,
+    record: CardRecord,
+    toast: { content: string; type: string } | undefined,
+  ): Promise<void> {
+    if (typeof event.raw.respond === 'function') {
+      await event.raw.respond(toast === undefined ? {} : { toast: { type: toastType(toast.type), content: toast.content } })
+      return
+    }
+    if (toast === undefined || this.config.toastFallback !== 'text') return
+    try {
+      const bot = this.im.bot(record.chat as ImChatKey)
+      await bot.send(this.replyTarget(record.chat as ImChatKey, event), h('message', h.text(toast.content)))
+    } catch (error) {
+      this.ctx.logger.warn('card %s toast reply failed: %s', record.id, error instanceof Error ? error.message : String(error))
+    }
+  }
+
+  /**
+   * Whether a click hit a copy of a card that is no longer the card: the card was republished as a new message on a
+   * platform that cannot edit, and the old one could not be recalled.
+   * @param record - the card.
+   * @param event - the click, naming the message that carried the control when the platform reports it.
+   */
+  private isOldCopy(record: CardRecord, event: ImButtonEvent | ImSelectEvent | ImCheckEvent): boolean {
+    const clicked = event.raw.message?.id
+    if (clicked === undefined) return false
+    const current = record.placement.kind === 'slot'
+      ? this.hosts().get(record.placement.host)?.message
+      : record.message
+    return current !== undefined && current !== clicked
+  }
+
+  /** The target a publication answering one interaction goes to: the chat, with the interaction's referrer. */
+  private replyTarget(chat: ImChatKey, event: ImButtonEvent | ImSelectEvent | ImCheckEvent | undefined): Target {
+    const referrer = event?.raw.referrer
+    return { chat: this.refOf(chat), ...referrer === undefined ? {} : { referrer } }
   }
 
   // ---------------------------------------------------------------------------------------------------------------
@@ -720,7 +869,7 @@ export class CardService {
     return {
       record, vm: undefined as unknown as CardVm, elements: [], dirty: false, unsaved: false,
       timer: undefined, snapshotTimer: undefined, click: undefined, toasts: [], agentCalls: [], requests: new Map(),
-      fetches: [], lastUsed: Date.now(),
+      fetches: [], lastUsed: Date.now(), unpublished: false, lastClick: undefined,
     }
   }
 
@@ -744,7 +893,7 @@ export class CardService {
           // State set in the same handler as close() is part of the card's final look: render it before freezing.
           if (live.dirty) await this.rerender(live, true)
           live.record.closed = true
-          await this.republish(live, true)
+          await this.republish(live, true, live.lastClick)
           await this.table().put(id, live.record)
           this.drop(id)
         })
@@ -876,7 +1025,7 @@ export class CardService {
     live.timer.unref?.()
   }
 
-  private async rerender(live: Live, quiet = false): Promise<void> {
+  private async rerender(live: Live, quiet = false, event?: Interaction): Promise<void> {
     if (this.live.get(live.record.id) !== live || live.record.closed) return
     live.dirty = false
     const out = live.vm.render()
@@ -891,13 +1040,27 @@ export class CardService {
       this.ctx.logger.warn('card %s rendered invalid content: %s', live.record.id, String(error))
       return
     }
-    if (JSON.stringify(elements) === JSON.stringify(live.elements)) return
+    // A card whose last state never reached the platform still republishes, although this render changed nothing.
+    if (JSON.stringify(elements) === JSON.stringify(live.elements) && !live.unpublished) return
     live.elements = elements
-    if (!quiet) await this.republish(live, false)
+    if (!quiet) await this.republish(live, false, event)
   }
 
-  /** Republish the message that shows `live`: its own message, a streaming turn, or an adopted host message. */
-  private async republish(live: Live, now: boolean): Promise<void> {
+  /** Whether the platform of a card edits its message in place (cards stored before probing did: they were Lark's). */
+  private editable(record: Pick<CardRecord, 'platform'>): boolean {
+    return record.platform?.edit !== false
+  }
+
+  /**
+   * Republish the message that shows `live`: its own message, a streaming turn, or an adopted host message.
+   *
+   * Where the platform cannot edit, only an interaction republishes, by answering it with a new message
+   * ({@link replace}); without one the change waits for the next click (`live.unpublished`).
+   * @param live - the card.
+   * @param now - skip the edit pacing.
+   * @param event - the interaction this republication answers, if any.
+   */
+  private async republish(live: Live, now: boolean, event?: Interaction): Promise<void> {
     const record = live.record
     if (record.placement.kind === 'slot') {
       const update = this.streaming.get(record.placement.host)
@@ -907,17 +1070,34 @@ export class CardService {
       }
       const host = this.hosts().get(record.placement.host)
       if (host === undefined) return
+      if (!this.editable(record)) {
+        if (event === undefined) {
+          live.unpublished = true
+          return
+        }
+        live.unpublished = false
+        await this.replaceHost(host, event)
+        return
+      }
       await this.paced(host.message, now, () => this.editHost(host))
       return
     }
     if (record.message === undefined) return
     const elements = record.closed ? frozen(live.elements) : live.elements
+    if (!this.editable(record)) {
+      if (event === undefined) {
+        live.unpublished = true
+        return
+      }
+      live.unpublished = false
+      if (await this.replace(record.id, record, elements, event)) await this.table().put(record.id, record)
+      return
+    }
     await this.paced(record.message, now, () => this.edit(record, record.message!, h('message', ...elements)))
   }
 
   private async editHost(host: HostRecord): Promise<void> {
-    const content = this.fill(host)
-    await this.edit({ chat: host.chat, bot: host.bot } as CardRecord, host.message, content)
+    await this.edit(host, host.message, this.fill(host))
   }
 
   /** The host message content with every slot replaced by its card's latest elements. */
@@ -937,21 +1117,104 @@ export class CardService {
     return revive(replace(host.content))
   }
 
-  private async edit(record: Pick<CardRecord, 'chat' | 'bot'>, message: string, content: Element): Promise<void> {
-    const chat = record.chat as ImChatKey
-    const bot = this.im.bot(chat)
-    let handle = this.handles.get(message)
-    if (handle === undefined) {
-      const ref = this.im.chat(chat)?.ref ?? { id: splitKey(chat).id, type: 'group' as const }
-      // Cards are always published in card mode (`interactive`); the rebuilt handle edits in that mode.
-      handle = bot.handleOf({ id: message, chat: ref }, 'card', 'card-inline')
+  /**
+   * Republish a host message on a platform that cannot edit: answer the interaction with the filled message, and
+   * point the host and every card it embeds at the new one.
+   * @param host - the host message.
+   * @param event - the interaction it answers.
+   */
+  private async replaceHost(host: HostRecord, event: Interaction): Promise<void> {
+    const content = this.fill(host)
+    if (!await this.replace(host.id, host, content.children, event)) return
+    await this.hosts().put(host.id, host)
+    for (const id of host.cards) {
+      const live = this.live.get(id)
+      if (live !== undefined) Object.assign(live.record, pointerOf(host))
+      const card = this.table().get(id)
+      if (card === undefined) continue
+      Object.assign(card, pointerOf(host))
+      await this.table().put(id, card)
     }
+  }
+
+  /** The handle of a published message: this process's own, or one rebuilt in the mode it was published in. */
+  private handleFor(pointer: MessagePointer & { chat: string }, message: string): MessageHandle {
+    const known = this.handles.get(message)
+    if (known !== undefined) return known
+    const chat = pointer.chat as ImChatKey
+    const bot = this.im.bot(chat)
+    let mode = pointer.mode
+    let kind = pointer.partKind
+    if (mode === undefined) {
+      // Stored before the mode was recorded: those cards were published in Lark's card mode, where the bot has one.
+      const modes = (bot as unknown as { modes?: Record<string, unknown> }).modes
+      if (modes === undefined || modes.card !== undefined) {
+        mode = 'card'
+        kind ??= 'card-inline'
+      }
+    }
+    const handle = bot.handleOf({ id: message, chat: this.refOf(chat) }, mode, kind)
+    // The recall window of the rebuilt handle counts from the real publication, not from now.
+    if (pointer.sentAt !== undefined) handle.createdAt = pointer.sentAt
+    return handle
+  }
+
+  private async edit(pointer: MessagePointer & { chat: string }, message: string, content: Element): Promise<void> {
+    const bot = this.im.bot(pointer.chat as ImChatKey)
+    const handle = this.handleFor(pointer, message)
     try {
       const result = await bot.edit(handle, content, { strategy: 'in-place' })
       this.handles.set(message, result.handle)
     } catch (error) {
       this.ctx.logger.warn('card message %s edit failed: %s', message, error instanceof Error ? error.message : String(error))
     }
+  }
+
+  /**
+   * Republish a message on a platform that cannot edit: answer the interaction with a new message (a passive reply
+   * through its referrer), then recall the old one where the platform still allows it. The pointer moves to the new
+   * message; a copy the platform keeps is refused when clicked ({@link isOldCopy}).
+   *
+   * Bounded by `replaceLimit` per 5 minutes and owner: the platform grants few replies per event, and a card that
+   * changes on every click must not flood the chat.
+   * @param owner - the card or host id the bound is counted for.
+   * @param pointer - the record whose message is replaced; updated in place.
+   * @param elements - the new content.
+   * @param event - the interaction answered.
+   * @returns whether the new message went out.
+   */
+  private async replace(
+    owner: string, pointer: MessagePointer & { chat: string }, elements: readonly Child[], event: Interaction,
+  ): Promise<boolean> {
+    const message = pointer.message
+    if (message === undefined) return false
+    const now = Date.now()
+    const recent = (this.replaced.get(owner) ?? []).filter(at => now - at < REPLACE_WINDOW_MS)
+    const limit = this.config.replaceLimit ?? 5
+    if (recent.length >= limit) {
+      this.replaced.set(owner, recent)
+      this.ctx.logger.info('card %s: %d resends in 5 minutes, this change waits for a later click', owner, limit)
+      return false
+    }
+    recent.push(now)
+    this.replaced.set(owner, recent)
+    const chat = pointer.chat as ImChatKey
+    const bot = this.im.bot(chat)
+    const old = this.handleFor(pointer, message)
+    let handle: MessageHandle
+    try {
+      handle = (await bot.send(this.replyTarget(chat, event), h('message', directive(EXPRESSIVE_DIRECTIVE), ...elements))).handle
+    } catch (error) {
+      this.ctx.logger.warn('card message %s resend failed: %s', message, error instanceof Error ? error.message : String(error))
+      return false
+    }
+    // `delete` is a logged no-op once the platform's recall window has closed.
+    await bot.delete(old).catch((error: unknown) => {
+      this.ctx.logger.warn('card message %s recall failed: %s', message, error instanceof Error ? error.message : String(error))
+    })
+    this.handles.delete(message)
+    this.adopt(pointer, handle)
+    return true
   }
 
   /** Run `edit` for one message at most once per `editIntervalMs`; the latest state wins. */
@@ -1015,7 +1278,9 @@ export class CardService {
    * @param record - the stored card to schedule.
    */
   private wakeAt(record: CardRecord): void {
+    // A platform that cannot edit shows a change only with the next click: a timer has nothing to republish.
     if (!this.config.wakeOnTimer || record.closed || record.wake === undefined || this.disposed) return
+    if (!this.editable(record)) return
     const id = record.id
     clearTimeout(this.sleepers.get(id))
     const timer = setTimeout(() => {
@@ -1117,12 +1382,72 @@ export class CardService {
   }
 }
 
+/**
+ * What a dry render of a card lost on its platform, in sentences the model can act on.
+ * @param report - the render report of `bot.render`.
+ * @returns one note per kind of loss; empty when the card renders as written.
+ */
+export function reportNotes(report: RenderReport | undefined): string[] {
+  if (report === undefined) return []
+  const unique = (values: string[]) => [...new Set(values)]
+  const notes: string[] = []
+  const interactions = unique(report.dropped.filter(entry => entry.reason === INTERACTION_DROPPED).map(entry => entry.what))
+  if (interactions.length > 0) {
+    notes.push(`Not clickable on this platform (shown as text instead): ${interactions.join(', ')}.`)
+  }
+  const dropped = unique(report.dropped.filter(entry => entry.reason !== INTERACTION_DROPPED)
+    .map(entry => `${entry.what} (${entry.reason})`))
+  if (dropped.length > 0) notes.push(`Dropped on this platform: ${dropped.join(', ')}.`)
+  const degraded = unique(report.degraded.filter(entry => !entry.path.includes('>'))
+    .map(entry => entry.variant === undefined ? entry.tag : `${entry.tag} (${entry.variant})`))
+  if (degraded.length > 0) notes.push(`Rendered in a simpler form on this platform: ${degraded.join(', ')}.`)
+  const truncated = report.moved.filter(entry => entry.reason.includes('truncated')).length
+  if (truncated > 0) notes.push(`${truncated} button label(s) were shortened to fit the platform.`)
+  if (report.split > 0) notes.push(`The card goes out as ${report.split + 1} messages.`)
+  if (report.folded > 0) notes.push(`${report.folded} panel(s) were folded to fit the platform's element budget.`)
+  return notes
+}
+
+/** The message fields of a record, to copy onto the records that share its message. */
+function pointerOf(record: MessagePointer): MessagePointer {
+  return {
+    ...record.message === undefined ? {} : { message: record.message },
+    ...record.bot === undefined ? {} : { bot: record.bot },
+    ...record.mode === undefined ? {} : { mode: record.mode },
+    ...record.partKind === undefined ? {} : { partKind: record.partKind },
+    ...record.sentAt === undefined ? {} : { sentAt: record.sentAt },
+  }
+}
+
 function newId(): string {
   return randomBytes(6).toString('base64url').replace(/[^A-Za-z0-9]/g, 'x')
 }
 
 function toastType(type: string): 'info' | 'success' | 'warning' | 'error' {
   return type === 'success' || type === 'warning' || type === 'error' ? type : 'info'
+}
+
+/**
+ * The card control an interaction names: its id, or — where a platform reports a click without the button id and
+ * carries it in the button data instead (QQ keyboards encode `id:data`, and some clients omit `button_id`) — that data.
+ * @param event - the interaction.
+ * @returns `dsh:card:<cardId>:<token>…`, or `undefined` when the control is not a card's.
+ */
+export function routedId(event: { id: string; data?: unknown }): string | undefined {
+  if (event.id.startsWith(CARD_BUTTON_PREFIX)) return event.id
+  if (typeof event.data === 'string' && event.data.startsWith(CARD_BUTTON_PREFIX)) return event.data
+  return undefined
+}
+
+/**
+ * The data of a clicked card button, without the routing a platform folded into it (QQ reports `id:data`).
+ * @param event - the click.
+ * @returns the button's own data, if any.
+ */
+function buttonData(event: { id: string; data?: unknown }): unknown {
+  if (typeof event.data !== 'string' || !event.data.startsWith(CARD_BUTTON_PREFIX)) return event.data
+  const parts = event.data.slice(CARD_BUTTON_PREFIX.length).split(':')
+  return parts.length > 2 ? parts.slice(2).join(':') : undefined
 }
 
 /** The interacting person of one event, as a card handler sees it. */

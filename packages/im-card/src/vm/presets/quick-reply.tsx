@@ -6,9 +6,12 @@
  * clickable, `sender` changes who may click. `sender="anyone"` opens a card to the whole chat, `sender="ou_…"` names
  * one person.
  *
+ * On a platform whose buttons cannot be clicked the control names what to reply instead, so the reader answers in the
+ * chat and the agent reads it as an ordinary message.
+ *
  * @module dsh-im-card/vm/presets/quick-reply
  */
-import { cardHandle } from '../actions.ts'
+import { cardHandle, platform } from '../actions.ts'
 import { useState } from '../hooks.ts'
 import { h } from '../jsx.ts'
 import {
@@ -85,6 +88,7 @@ export function PromptButton(props: PromptButtonProps) {
     if (once) setUsed(who)
   }
   if (once && used !== null) return p.done !== undefined ? p.done : doneLine('✅ 已选择', label, used)
+  if (!platform().buttons) return <p>{'回复「' + prompt + '」'}</p>
   const attrs = buttonStyle(p, { onClick: click, disabled: p.disabled === true ? true : undefined })
   return <button {...attrs}>{p.children}</button>
 }
@@ -106,6 +110,9 @@ export function PromptChoices(props: PromptChoicesProps) {
   const once = p.once !== false
   const options = (Array.isArray(p.options) ? p.options : []).map(choiceOf)
   if (once && used !== null) return p.done !== undefined ? p.done : doneLine('✅ 已选择', used.label, used.who)
+  if (!platform().buttons) {
+    return [<p>请直接回复以下任一项：</p>, <ul>{options.map((choice) => <li>{choice.prompt}</li>)}</ul>]
+  }
   const buttons = options.map((choice, index) => {
     const style: PromptChoice = choice.option !== undefined ? choice.option : ({} as PromptChoice)
     const attrs = buttonStyle(p, {})

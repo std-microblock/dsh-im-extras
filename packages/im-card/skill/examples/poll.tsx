@@ -1,5 +1,5 @@
 // Single-choice poll: one vote per user (re-voting moves the vote), counts and voters per option,
-// and a close button that only `props.owner` (a Feishu open_id) may use when it is given.
+// and a close button that only `props.owner` (a platform user id) may use when it is given.
 import { useState, useCard, agent } from 'dsh:card'
 
 type Props = { question?: string; options?: string[]; owner?: string }

@@ -1,7 +1,8 @@
 # dsh-im-card
 
-Interactive Feishu cards written as React-like TSX. An agent publishes a card; people click its buttons; the card
-updates itself in place and keeps its state across restarts.
+Interactive IM cards written as React-like TSX, for Lark and QQ. An agent publishes a card; people click its buttons;
+the card updates itself and keeps its state across restarts. A card is written once in the platform-neutral satori
+element vocabulary; the IM adapter renders it (a Lark card, or QQ markdown with a keyboard).
 
 ## How it works
 
@@ -14,11 +15,11 @@ updates itself in place and keeps its state across restarts.
 - **Runtime.** Each card runs in its own QuickJS VM (`quickjs-wasi`) with the in-VM runtime built from `src/vm/`:
   `useState`, `useReducer`, `useEffect`, `useLayoutEffect`, `useMemo`, `useCallback`, `useRef`, `useId`, `useCard`
   (`toast`, `close`, `send`), `useStoredState`, `fs`, `fetch`, timers, `console`, `agent.send`. There is no virtual DOM:
-  a state change re-renders the whole tree and the host republishes the whole card message (Feishu `PATCH`, paced by
-  `editIntervalMs`).
+  a state change re-renders the whole tree and the host republishes the whole card message (an in-place edit paced by
+  `editIntervalMs` where the platform edits messages; see *Platforms* for the others).
 - **Buttons and controls.** A `<button onClick>` gets a random token per element position; its id on the platform is
   `dsh:card:<cardId>:<token>`. A click reaches `ctx.im`'s `im/button` event, the service runs the handler in the VM,
-  answers the Feishu callback (with the toast the handler showed) and then edits the message. A `<select onSelect>` and a
+  answers the platform callback where it has one (with the toast the handler showed) and then edits the message. A `<select onSelect>` and a
   checkbox `<input type="checkbox" onChange>` get a token the same way and arrive as `im/select` / `im/check`; a
   `<button type="submit">` inside a `<form>` is an ordinary routed button whose event also carries the form's values.
 - **Persistence.** All state is VM memory. After a change the service snapshots the whole VM: the memory is XORed
@@ -60,15 +61,34 @@ card's turn, or the newest message a person wrote in the target chat for `im_sen
 `im_cards`, so the card can restrict its buttons to that person and name them without an extra API call. A bot is never
 that person: a turn an alert webhook (or any other bot) started leaves the card naming nobody, so its buttons answer
 whoever is reading the chat — a bot cannot press one, and naming it would leave the card unanswerable in the whole chat.
-`sender="anyone"` opens a card to the whole chat, `sender="ou_…"` names one person.
+`sender="anyone"` opens a card to the whole chat, `sender="<platform user id>"` names one person.
 
-`<PromptForm>` draws its button fields (`switch`, `radio`, `number`) above the platform `<form>`, because a Feishu
+`<PromptForm>` draws its button fields (`switch`, `radio`, `number`) above the platform `<form>`, because a Lark
 form holds form components only; the submit click carries the native controls' values and the button fields come from
 the component's own state.
 
 The guidance the model reads from the start of a session is `src/guidance.ts` (prompt section
 `im-card:quick-replies`), replaceable through the `guidance` config field. `im-card` skill + `im_card_types` carry the
 full reference.
+
+## Platforms
+
+What a platform can do with a card is probed from its adapter (`src/platform.ts`), handed to the card as
+`useCard().platform` (`edit`, `buttons`, `forms`, `toast`) and reported to the model in `im_send_card`'s `notes`,
+together with what the dry render dropped (`INTERACTION_DROPPED`, degraded elements, shortened labels).
+
+| | Lark | QQ (markdown + keyboard) |
+| --- | --- | --- |
+| republish after a change | in-place edit (`PATCH`), paced | recall the old message (within the platform's 2-minute window) and answer the click with a new one (passive reply through the click's referrer), at most `replaceLimit` per card per 5 minutes |
+| refresh without a click (timer, `fetch`, host event) | yes | no: the change shows with the next click; `wakeOnTimer` never revives such a card |
+| clicks on an older copy | — | refused: the card lives in the newest message |
+| toast | yes (`ButtonEvent.respond`) | no; `toastFallback: text` turns it into a one-line reply |
+| `<form>` / `<input>` / `<select>` | native | `<PromptForm>` uses buttons: select → option row, checkbox → switch, text → a chat reply (with an input-filling keyboard button) |
+| buttons | card buttons | keyboard: 5 rows × 5, labels ≤ 10 characters, data encoded `id:data` |
+
+A QQ client sometimes reports a click without the button id; the card id is then read from the button data. Without
+keyboard permission (QQ `keyboard: false`) buttons render as text: the quick replies then name what to reply, and a
+form becomes a reply template.
 
 ## Two ways to publish
 
@@ -101,6 +121,8 @@ layouts (segmented choices, steppers, tabs, pagination, confirmations) and the l
 | `fetchPerMinute` / `fetchConcurrent` | 20 / 3 | `fetch` bounds per card |
 | `fetchHosts` | `[]` (any) | host names a card may reach, `*` matching any span |
 | `fetchAllowPrivate` | false | allow loopback, private and link-local addresses |
+| `replaceLimit` | 5 | resends per card per 5 minutes where the platform cannot edit (QQ) |
+| `toastFallback` | `ignore` | where clicks cannot be answered with a toast (QQ): `ignore` it, or send it as a one-line `text` reply |
 | `guidance` | shipped text | system-prompt guidance on the quick replies (`src/guidance.ts`); `''` leaves the section out |
 
 ## Development
@@ -109,7 +131,6 @@ layouts (segmented choices, steppers, tabs, pagination, confirmations) and the l
 pnpm install
 pnpm run build     # tsc (host) + tsc (the VM project) + esbuild → dist/vm/runtime.js
 pnpm test          # transpiler, runtime (in real QuickJS), engine, service lifecycle, every skill example
-node --disable-warning=ExperimentalWarning scripts/live-check.ts poll   # send an example to the test group
 ```
 
 ### The VM runtime
@@ -117,7 +138,7 @@ node --disable-warning=ExperimentalWarning scripts/live-check.ts poll   # send a
 `src/vm/` is a TypeScript project of its own, not part of the host build:
 
 - **One script, not modules.** The VM has no module system, so the runtime must arrive as a single script whose
-  top-level code installs the globals a card uses. `scripts/vm-build.mjs` bundles `src/vm/index.ts` with esbuild
+  top-level code installs the globals a card uses. `scripts/build-vm.mjs` bundles `src/vm/index.ts` with esbuild
   (`format: 'iife'`) into `dist/vm/runtime.js`; `src/engine.ts` evaluates that file. The output is deterministic —
   the engine fingerprints it, and a snapshot taken against another build cannot be restored, so the card re-runs its
   bundle instead.
@@ -131,8 +152,8 @@ node --disable-warning=ExperimentalWarning scripts/live-check.ts poll   # send a
   bundle compiles to (`__h__`), so a preset is written exactly like the cards it serves. Their props mirror
   `types/dsh-card.d.ts`, the declarations a card is type-checked against; keep the two in step.
 
-The vendor changes this relies on live in the harness fork (`vendor/README.md` V65–V72): the Lark callback answer
-(`ButtonEvent.respond` / `defer`), the Lark button attributes, `Bot.handleOf` (edit a message after a restart), and the
+The harness features this relies on: the click answer (`ButtonEvent.respond` / `defer`), the Lark button attributes,
+`Bot.handleOf` (edit a message after a restart), `Bot.render` reports (capability probes and `notes`), and the
 `form` / `input` / `select` vocabulary with its `interaction/select` and `interaction/check` events plus
 `ButtonEvent.values`.
 
@@ -142,10 +163,14 @@ The vendor changes this relies on live in the harness fork (`vendor/README.md` V
   `<input>` never reports itself — its value reaches the card only when the `<form>`'s submit button is clicked
   (`event.values`). A card cannot re-read a field afterwards, so a control outside a `<form>` needs a callback of its
   own; without one the render reports the interaction as dropped.
-- Lark gives a card callback only the clicker's open_id, so `event.user.name` is absent; show people with
-  `<at type="user" id={event.user.id} />`.
-- A card is editable for 14 days; after that clicks still run but the message no longer changes.
-- Per-viewer cards (Feishu exclusive cards / ephemeral messages) are not implemented.
+- Lark and QQ give a card callback only the clicker's platform user id, so `event.user.name` is absent; show people
+  with `<at type="user" id={event.user.id} />`.
+- A Lark card is editable for 14 days; after that clicks still run but the message no longer changes.
+- On QQ the resent card goes straight to the platform (not through `ctx.im.send`), so it is not stored in the chat
+  history; `im_update_card` shows the new code only by answering the card's last click, else with the next click.
+- On QQ a card inside a streamed answer (`satori-tsx`) is republished with the whole answer message around it: a
+  click that changes it resends the answer too.
+- Per-viewer cards (Lark exclusive cards / ephemeral messages) are not implemented.
 - A card's files live in one folder per working directory, shared by every card published from it: there is no
   per-card namespace, so a card that must not collide takes its path from `props`. File calls are synchronous, so a
   large read or write delays that card's own entry (bounded by `filesMaxBytes`).

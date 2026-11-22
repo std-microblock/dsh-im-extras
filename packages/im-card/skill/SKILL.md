@@ -1,11 +1,11 @@
 ---
 name: im-card
-description: Interactive Feishu cards — quick replies, confirmations, forms, polls, live status, written as TSX
+description: Interactive IM cards (Lark, QQ) — quick replies, confirmations, forms, polls, live status, written as TSX
 ---
-# Interactive Feishu cards (im-card)
+# Interactive IM cards (im-card)
 
 A card is a small React-like **TypeScript (TSX)** component that runs in a sandbox (one QuickJS VM per card). It
-renders Feishu card content; clicks run its handlers, state changes update the message in place, and all its state
+renders card content (a Lark card, or QQ markdown with a keyboard); clicks run its handlers, state changes update the message in place, and all its state
 survives bot restarts. Cards are **type-checked** (strict) before anything is sent: an unknown element, a wrong
 attribute value, a wrong prop or a misused hook is a type error with `file:line:col`, returned to you, and nothing
 reaches the chat. Call `im_card_types` to get the exact type definitions (`dsh:card` and every JSX element) as a file.
@@ -48,7 +48,7 @@ export default function Ask() {
 
 **The requester owns it.** `sender` defaults to `"requester"` — the person whose message the card answers — so nobody
 else can answer for them (they get `只有 张三 可以点击`). `sender="anyone"` opens it to the whole chat (a poll, a
-sign-up), `sender="ou_xxx"` names one person, `senderName` overrides the name shown, `confirm={{ title, text }}` asks
+sign-up), `sender="<platform user id>"` names one person, `senderName` overrides the name shown, `confirm={{ title, text }}` asks
 before sending.
 
 **Styling** (buttons and options): `variant` (`default` `primary` `danger` `text` `primary_text` `danger_text`
@@ -142,7 +142,7 @@ export function Section(props: { title: string; children?: Child }) {
 }
 ```
 - **Whole re-render, no diffing.** Every state change re-runs the whole component tree and the host re-publishes the
-  whole Feishu message (paced to ~1 edit/s; the latest state wins). Keep render pure: no `setState` during render
+  whole message (paced to ~1 edit/s; the latest state wins; on QQ only a click republishes, see "Platforms"). Keep render pure: no `setState` during render
   (it loops: "too many re-renders"), no side effects outside handlers and effects.
 - **Hook rules as in React:** the same hooks in the same order on every render (never inside `if` or loops), else the
   render fails with "hook order changed". Effects run after a render; return a cleanup function.
@@ -155,7 +155,7 @@ export function Section(props: { title: string; children?: Child }) {
 
 ### Clicks
 
-`onClick(event)` receives `{ user: { id, name? }, data?, time }`. `user.id` is the clicker's Feishu open_id; anyone in
+`onClick(event)` receives `{ user: { id, name? }, data?, time }`. `user.id` is the clicker's platform user id; anyone in
 the chat can click. `name` is usually absent, so display people with `<at type="user" id={e.user.id} />`. Inside a
 handler, `const card = useCard()` gives:
 
@@ -174,7 +174,7 @@ handler, `const card = useCard()` gives:
 | `p`, `h1`…`h6`, `small` | — | blocks of inline content; `small` = grey caption text |
 | `b` `i` `s` `code` `br` | — | inline (`u` is accepted but shows as plain text) |
 | `a` | `href` | inline link |
-| `at` | `type: 'user' \| 'all'`, `id` (open_id, for `user`) | mention |
+| `at` | `type: 'user' \| 'all'`, `id` (platform user id, for `user`) | mention |
 | `span` | `color`: `default` `muted` `info` `success` `warning` `danger` | colored inline text |
 | `ul`, `ol` (`start`), `li` (`checked`) | `checked: boolean` | `li` only inside `ul`/`ol`; `checked` shows a checkbox mark |
 | `blockquote` | — | |
@@ -197,11 +197,11 @@ Its children are the label text.
 | attr | values |
 |---|---|
 | `onClick` | handler `(event) => void` |
-| `variant` | `default` `primary` `danger` `text` `primary_text` `danger_text` `primary_filled` `danger_filled` `laser` (exact Feishu style; wins over `theme`) |
+| `variant` | `default` `primary` `danger` `text` `primary_text` `danger_text` `primary_filled` `danger_filled` `laser` (exact Lark style; wins over `theme`; QQ maps `theme`) |
 | `theme` | `default` `info` `success` `warning` `danger` (coarse style) |
 | `size` | `tiny` `small` `medium` `large` |
 | `width` | `'default'`, `'fill'`, or pixels (number) |
-| `icon` | Feishu standard icon token, e.g. `'done_outlined'`, `'add_outlined'` (an unknown token may be rejected by Feishu) |
+| `icon` | Lark standard icon token, e.g. `'done_outlined'`, `'add_outlined'` (an unknown token may be rejected by Lark; ignored on QQ) |
 | `confirm` | `{{ title: '…', text: '…' }}`: confirmation dialog before the click is sent (both non-empty) |
 | `tip`, `disabled`, `disabledTip` | hover text; greyed out; hover text while disabled |
 | `data` | string echoed back as `event.data` |
@@ -371,13 +371,27 @@ needs, not secrets.
 
 ## Limits
 
-- ≤ 200 Feishu elements and ≤ 30 KB JSON per message (each text run, button, column and panel counts): page long
+- Lark: ≤ 200 card elements and ≤ 30 KB JSON per message (each text run, button, column and panel counts): page long
   lists instead of rendering them all.
-- ~1 edit per second per message (Feishu allows 5/s); a card stays editable for 14 days.
-- Feishu wants each click answered within 3 s: keep handlers fast (CPU is capped at ~1 s per entry, memory at 16 MB).
+- ~1 edit per second per message (Lark allows 5/s); a Lark card stays editable for 14 days.
+- Lark wants each click answered within 3 s: keep handlers fast (CPU is capped at ~1 s per entry, memory at 16 MB).
 - ≤ 4 inline cards per reply; ≤ 16 modules and 256 KB of source per card.
 - Files: ≤ 1 MB per read, write or append, and one call blocks the card until it returns. Requests: 20 per minute per
   card, 3 in flight, ≤ 512 KB and ≤ 10 s each, http/https only.
+
+## Platforms
+
+The same card renders on every platform the bot serves; `useCard().platform` says what this one can do
+(`{ name, edit, buttons, forms, toast }`) and `im_send_card` returns the same facts as `notes`, plus what the render
+dropped. On QQ (markdown + keyboard):
+
+- No in-place edits: a click that changes the card recalls the old message and answers with a new one (≤ 5 per card per
+  5 minutes; beyond that the change waits for a later click). Timers, `fetch` results and host events never refresh
+  it on their own — design QQ cards so that every change follows a click.
+- No toasts (`card.toast()` is ignored) and no form controls: `<PromptForm>` falls back to buttons (select → option
+  row, checkbox → switch, text → "reply in the chat"); write your own forms as button steps when `!platform.forms`.
+- Keyboard: at most 5 rows × 5 buttons, labels ≤ 10 characters (longer ones are cut); a `<button-group>` is one row.
+- Without keyboard permission buttons show as text: the presets then tell the reader what to reply.
 
 ## Debugging
 
@@ -412,7 +426,7 @@ Shipped next to this skill in `examples/` (each default-exports a component with
   a text field, a multi-line field and a checkbox whose values arrive together in the submit button's
   `event.values`.
 
-Poll (publish with `im_send_card({ path, props: { question, options, owner: "<publisher open_id>" } })`):
+Poll (publish with `im_send_card({ path, props: { question, options, owner: "<publisher platform user id>" } })`):
 
 ```tsx
 import { useState, useCard, agent } from 'dsh:card'

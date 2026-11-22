@@ -28,7 +28,7 @@ export interface ButtonStyleProps {
 
 /** Who a quick reply is addressed to. */
 export interface PromptTargetProps {
-  /** `'requester'` (default), `'anyone'`, or one person's open_id. */
+  /** `'requester'` (default), `'anyone'`, or one person's platform user id. */
   sender?: string
   /** How that person is named in toasts and in the line a used control leaves. */
   senderName?: string
@@ -46,7 +46,7 @@ export interface PromptReplyProps extends PromptTargetProps {
 
 /** The person a quick reply is addressed to. */
 export interface PromptTarget {
-  /** Their open_id; `''` means anyone. */
+  /** Their platform user id; `''` means anyone. */
   id: string
   /** Their name, or `''` when unknown. */
   name: string
@@ -90,7 +90,7 @@ export function requester(): { id: string; name?: string } | undefined {
 }
 
 /**
- * Who may use a quick reply: `sender` is an open_id, `'requester'` (default) or `'anyone'`; `senderName` labels that
+ * Who may use a quick reply: `sender` is a platform user id, `'requester'` (default) or `'anyone'`; `senderName` labels that
  * person. `'requester'` without a known requester admits everyone, because nobody could be named.
  * @param props - the preset's props.
  */

@@ -8,11 +8,11 @@ import { readdir, readFile } from 'node:fs/promises'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { bundleCard, normalizePath, type CardBundle, type CardFiles } from '../src/bundle.ts'
+import { vendor } from './vendor.ts'
 import { CardEngine, type CardNode, type CardVmHost } from '../src/engine.ts'
 
-const VENDOR = 'file:///D:/dsh/toc-agent/dsh/vendor'
-const core = await import(`${VENDOR}/plugin-im-core/lib/index.js`)
-const lark = await import(`${VENDOR}/plugin-im-adapter-lark/lib/index.js`)
+const core = await vendor('plugin-im-core')
+const lark = await vendor('plugin-im-adapter-lark')
 type El = { type: string; attrs: Record<string, unknown>; children: El[] }
 const h = core.h as ((tag: string, attrs: Record<string, unknown>, ...kids: El[]) => El) & { text(s: string): El }
 const normalize = core.normalize as (el: El) => El

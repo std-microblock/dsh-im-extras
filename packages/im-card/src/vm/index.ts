@@ -2,7 +2,7 @@
  * The interactive-card VM runtime: the whole in-VM API, installed as globals for the card module that runs next.
  *
  * This directory is a small TypeScript project of its own, built into **one plain script** that the engine evaluates
- * inside a QuickJS VM (`scripts/vm-build.mjs` → `dist/vm/runtime.js`). It has its own `tsconfig.json` with `lib:
+ * inside a QuickJS VM (`scripts/build-vm.mjs` → `dist/vm/runtime.js`). It has its own `tsconfig.json` with `lib:
  * ES2023` and no Node types on purpose: nothing here may reach for a host API, because inside the VM there is none —
  * `globalThis.__host` is the only way out, and the engine installs it before this script runs.
  *

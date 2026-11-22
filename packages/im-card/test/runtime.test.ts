@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { zstdCompressSync, constants as zlibConstants } from 'node:zlib';
 import { QuickJS } from 'quickjs-wasi';
-import { buildVmRuntime } from '../scripts/vm-build.mjs';
+import { buildVmRuntime } from '../scripts/build-vm.mjs';
 
 const require = createRequire(import.meta.url);
 const wasm = new WebAssembly.Module(readFileSync(require.resolve('quickjs-wasi/quickjs.wasm')));
