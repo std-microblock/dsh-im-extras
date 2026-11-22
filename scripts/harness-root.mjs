@@ -6,7 +6,8 @@
 // node_modules, and here they are resolved from a harness checkout that has
 // been built (`pnpm build` in it), by path.
 //
-// `DSH_HARNESS_ROOT` wins when it is set, then the path in an untracked`n// `.harness-root` file at the repository root; otherwise the candidates below are
+// `DSH_HARNESS_ROOT` wins when it is set, then the path in an untracked
+// `.harness-root` file at the repository root; otherwise the candidates below are
 // tried in order: a sibling harness checkout, and one nested in this repository.
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
