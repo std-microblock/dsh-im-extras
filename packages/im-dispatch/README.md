@@ -96,6 +96,7 @@ ctx.inject(['imDispatch'], (ctx) => {
   await ctx.imDispatch.updateRule(task, id, { mode: 'cut' })
   await ctx.imDispatch.removeRule(id, { user })    // with `user`: refused when imAuth locks the task to others
   ctx.imDispatch.tasks(); ctx.imDispatch.routers(); ctx.imDispatch.sessionTitle(sessionId)
+  await ctx.imDispatch.skills()                    // the /skill commands: { name, description, commands (aliases) }[]
   await ctx.imDispatch.chronicleStatus(); await ctx.imDispatch.chronicleEntries({ chat, before, query, limit })
 
   // extension points — removed automatically when the calling plugin unloads

@@ -25,7 +25,7 @@ import { dispatchDomain, dispatchStore, type DispatchChat, type DispatchStore, t
 import { ImError, messageKey, operationId, splitKey } from './im.ts'
 import { DEFAULT_DISPATCHER_PROMPT, workerPrompt } from './prompt.ts'
 import { RuleEngine, ruleInput, type RuleInput, type RuleOutcome } from './rules.ts'
-import { SkillCommandResolver, parseSlashInvocation, renderSkillContentBlock } from './skills.ts'
+import { SkillCommandResolver, parseSlashInvocation, renderSkillContentBlock, type SlashSkillView } from './skills.ts'
 import { formatRouterSessionTitle, formatTaskSessionTitle, type ChatTitleInfo } from './titles.ts'
 
 /** Why one message was delivered to a task session. */
@@ -418,6 +418,11 @@ export class DispatchHost {
   /** Clear cached slash-skill index after a skill catalog change. */
   invalidateSkillCache(): void {
     this.skillResolver.invalidate()
+  }
+
+  /** User-invocable skills reachable as `/<name>` or an alias, read for the workers' working directory. */
+  slashSkills(): Promise<SlashSkillView[]> {
+    return this.skillResolver.list(this.config.worker.cwd)
   }
 
   /** Known display metadata (name + platform chat type) for one admitted chat. */

@@ -289,3 +289,13 @@ test('when requester already has credentials, requestCapabilities auto-grants si
 
   await host.dispose()
 })
+
+test('slashSkills lists user-invocable skills with the aliases that resolve to them', async () => {
+  const { host } = setup()
+  const skills = await host.slashSkills()
+  assert.deepEqual(skills.map(skill => skill.name), ['ticket-intake', 'backend-task', 'quick-note'])
+  assert.deepEqual(skills.find(skill => skill.name === 'ticket-intake'), {
+    name: 'ticket-intake', description: '产品侧需求建单规范', commands: ['产品需求'],
+  })
+  assert.deepEqual(skills.find(skill => skill.name === 'quick-note')?.commands, ['笔记'])
+})

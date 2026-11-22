@@ -214,6 +214,16 @@ export function renderSkillContentBlock(skill: Pick<SkillDefinitionLike, 'name' 
   ].join('\n')
 }
 
+/** One user-invocable skill as a slash command, for listing (`ctx.imDispatch.skills()`). */
+export interface SlashSkillView {
+  /** Skill name; `/<name>` invokes it. */
+  readonly name: string
+  /** The skill's description. */
+  readonly description: string
+  /** Declared aliases (`metadata.commands` …), without the leading `/`, that resolve to this skill. */
+  readonly commands: readonly string[]
+}
+
 /** Cached resolver mapping `/<token>` (skill name or `metadata.commands` alias) to user-invocable skills. */
 export class SkillCommandResolver {
   private readonly getRegistry: () => SkillRegistryLike | undefined
@@ -260,6 +270,37 @@ export class SkillCommandResolver {
       skill: definition,
       extensions: extractSkillExtensions(definition),
     }
+  }
+
+  /**
+   * Every user-invocable skill with the aliases that resolve to it — the same index {@link resolve} answers from, so
+   * an alias another skill already claimed is not listed twice. Read-only; an unavailable registry lists nothing.
+   * @param cwd - working directory the skill catalog is read for.
+   * @returns skills in catalog order.
+   */
+  async list(cwd: string): Promise<SlashSkillView[]> {
+    const registry = this.getRegistry()
+    if (registry === undefined) return []
+    const index = await this.indexFor(registry, cwd)
+    let summaries
+    try {
+      summaries = await registry.list({ cwd })
+    } catch (error) {
+      this.logger.warn('im-dispatch: failed to list skills for slash commands: %s', String(error))
+      return []
+    }
+    const out: SlashSkillView[] = []
+    for (const summary of summaries) {
+      if (summary.invocation.userInvocable === false) continue
+      const own = normalizeCommandToken(summary.name)
+      if (index.get(own) !== summary.name) continue
+      const commands: string[] = []
+      for (const [token, name] of index) {
+        if (name === summary.name && token !== own) commands.push(token)
+      }
+      out.push({ name: summary.name, description: summary.description, commands })
+    }
+    return out
   }
 
   private async indexFor(registry: SkillRegistryLike, cwd: string): Promise<Map<string, string>> {

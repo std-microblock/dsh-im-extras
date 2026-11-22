@@ -33,6 +33,7 @@ import { Config } from './config.ts'
 import { DispatchHost, type DeliveryCause } from './host.ts'
 import { ImError, isImError } from './im.ts'
 import { SessionTitleSynchronizer } from './titles.ts'
+import type { SlashSkillView } from './skills.ts'
 import { applyTools } from './tools.ts'
 import type {
   AgentLike, DispatchIm, ImButtonEventLike, ImHostedRecord, ImMessageEventLike, ImOutcomeLike, ImReactionEventLike,
@@ -54,7 +55,7 @@ export { compileParameters, defineTool, validate } from './schema.ts'
 export {
   SkillCommandResolver, extractSkillExtensions, parseSlashInvocation, renderSkillContentBlock,
 } from './skills.ts'
-export type { ResolvedSlashSkill, SkillExtensions, SlashInvocation } from './skills.ts'
+export type { ResolvedSlashSkill, SkillExtensions, SlashInvocation, SlashSkillView } from './skills.ts'
 export { TOOL_NAMES, applyTools, errorValue, taskView } from './tools.ts'
 export {
   SessionTitleSynchronizer, cleanTitleText, formatRouterSessionTitle, formatTaskSessionTitle, shortPlatformId,
@@ -283,6 +284,14 @@ export class ImDispatchService extends Service {
   /** Every router session this host created or saw. */
   routers(): ImHostedRecord[] {
     return this.host.routers()
+  }
+
+  /**
+   * The `/skill` commands this strategy answers: every user-invocable skill of the workers' working directory with
+   * the aliases that resolve to it. Read-only (a menu or command panel lists them).
+   */
+  skills(): Promise<SlashSkillView[]> {
+    return this.host.slashSkills()
   }
 
   /**
