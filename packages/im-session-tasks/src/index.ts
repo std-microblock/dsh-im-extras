@@ -13,7 +13,7 @@ import type {} from '@deepseek-ai/dsh-storage-domain'
 import type { ImApi, ImMessage } from '@deepseek-ai/dsh-im'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type {
-  ImTask, ImTaskDescribe, ImTaskFilter, ImTaskPlacer, ImTaskStart, ImTasks, SessionTasksConfig,
+  ImTask, ImTaskDelivery, ImTaskDescribe, ImTaskFilter, ImTaskPlacer, ImTaskStart, ImTasks, SessionTasksConfig,
 } from './api.ts'
 import { Config } from './config.ts'
 import { ImTaskHost } from './tasks.ts'
@@ -125,8 +125,8 @@ export class ImTasksService extends Service implements ImTasks {
    * @param messages - the messages to deliver, in chat order.
    * @returns the task after the messages were recorded.
    */
-  deliver(id: number, messages: readonly ImMessage[]): Promise<ImTask> {
-    return this.host.deliver(id, messages)
+  deliver(id: number, messages: readonly ImMessage[], options?: ImTaskDelivery): Promise<ImTask> {
+    return this.host.deliver(id, messages, options)
   }
 
   /**
