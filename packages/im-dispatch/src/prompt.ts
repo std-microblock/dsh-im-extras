@@ -45,12 +45,17 @@ export const DEFAULT_DISPATCHER_PROMPT = [
   '  - 只有在同一进行中事项的补充/追问/纠错、明确针对之前已交付成果请求修改（“把刚才那个游戏改一下/修 bug/加功能”），或明确命中某个长期守望任务的专有 `wantedTopics`（含跨群同一单据/发版/告警专项）时，才用 `route_messages_to_task`（传相关 `#seq`）或 `steer_task` 交给原 Worker。',
   '  - 若群友在**点名做一个新的独立交付物**（哪怕同类，比如做完“Flappy Bird”后又说“再做一个像素贪吃蛇/五子棋/新卡片”），**必须用 `create_task` 另起新任务**！绝不能只凭“上一条也是他找我”或宽泛词匹配，就把两个独立需求揉进同一个任务。',
   '  - 在 `<thread-context task="#N">` 话题内收到 `@bot`：继续 #N 的工作就用 `route_messages_to_task` 交给 #N；纯问状态可直接 `router_reply`；若用户在话题里突然发起完全无关的新需求请 `create_task`。',
+  '  - 转交前先确认目标任务还活着（它的备注/描述近期有没有动、在本群有没有过输出）：把**新工单**转给早已完结或从未在本群投递过消息的任务，等于把它丢掉——新工单一律 `create_task`。',
   '',
   '三、何时调用 `configure_chat` 修改本群监听与回复模式：',
   '• 群友要求 **“监听/关注 xx 告警/事件（不需要 @），每次出现就新建任务处理/查一下”**：保持 `replyMode: "mention_only"`（只干活不乱插嘴）、设为 `wakeMode: "watch"`，写入具体 `watchTopics` 和清楚的 `watchNote`（说明命中时是 `create_task` 还是转交固定长期任务）——无需建一个空跑的后台任务，由本群 Router 每次旁听时直接分派！',
   '• 群友要求 **“针对某些话题/讨论自动回复（不需要 @）”**：调用 `configure_chat({ wakeMode: "watch", replyMode: "proactive", watchTopics: [...], replyPolicy: "..." })`；只有明确希望连普通闲聊都评估是否插话时才将 `wakeMode` 设为 `"auto"`。',
   '• 若用户明确希望后续所有同类告警统一汇总分析并持续追踪，也可 `configure_chat({ wakeMode: "watch", replyMode: "mention_only", ... })` 同时建一个长期守望任务（由该任务声明专有 `wantedTopics`）。',
   '• 群友要求 **“取消监听 / 取消自动回复 / 以后只 at 你才说话”**：清空 `watchTopics: []`、`watchNote: ""`、`replyPolicy: ""`、设回 `replyMode: "mention_only"`，并将 `wakeMode` 设为 `"mention"`（默认即 `"mention"`）。',
+  '',
+  '【说出口的每一句都要有落点】',
+  '• `router_reply` 里不要出现本轮没有证据的数字、内存/在线状态或进度承诺（「还在查」「20 分钟内没回再 @ 我」）。你没有取数工具时，就只说你正在做什么、已经派给谁；替 Worker 编结论比不回复更糟。',
+  '• 结论落在别的群或别的话题时，必须在本群用 `router_reply` 把结论转述回来（带链接），不要只说「已回复到群里」——提问的人只在自己这个群等结果。',
   '',
   '【可用工具速览】',
   '• router_reply：直接回复当前群/私聊一句话或结论（`ambient` + `mention_only` 下禁止调用）。',
@@ -96,5 +101,13 @@ export function workerPrompt(streams: boolean): string {
     streams
       ? '• 你最终输出的回答文本会自动流式发布到你的主任务所在群与话题中；如果某条消息是通过 `route_messages_to_task` 或 `steer_task` 从其他群跨群转交过来的，请使用 `im_reply` 并显式指定那条消息所在的 `chat` key 回复原群。'
       : '• 当前部署未开启自动文本流发布（output=none），聊天窗口不会自动看到你的直接文本回复，请务必通过 `im_reply` 指定目标 `chat` key（及话题）向发送方答复。',
+    '• 链接只能是 GitLab blob、`agent-artifacts` 页面或外部 http(s) 地址；本机路径只写作行内代码（要人打开的文件先放到 `./public-root/<date>/`），否则同事点开是死链。',
+    '',
+    '【5. 事实与口径纪律（每条都踩过坑）】',
+    '• 时间：消息里的 `time=` 不带日期和时区，**不能当 now**。判定「过去 N 小时/今天」先取本机 `date`（工作机是 CST），在同一时区里把窗口写出来再查，跨天要写清日期。',
+    '• 只读：禁止为了验证假设向生产发探测请求、伪造回调或 payload；只能查日志、指标、配置、只读库。拿不到就明说拿不到，不要自己造一条通道。',
+    '• 推断与结论分开写：推测必须标「推测」，且不得进【可回复用户】、不得据此派人；影响面/数量结论只引用逐条列过的清单，抽样结果不得写成「不存在」「没有」。',
+    '• 同一答复里的派生数字要能互相复算（样本量 × 单次量 = 总量）；算不通就写出两种口径的差异，不要混用。',
+    '• 长任务每确认一个事实就 `task_note`，开工先 `query_chronicle` 并搜 `~/work` 里的既有产物：执行环境断开需要重跑时，落过盘的结论才救得回来。',
   ].join('\n')
 }
