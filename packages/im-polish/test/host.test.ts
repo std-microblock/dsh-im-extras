@@ -141,3 +141,69 @@ describe('PolishHost', () => {
     assert.equal(await host.clear(), 2)
   })
 })
+
+describe('the text bubble ceiling', () => {
+  const capped = (maxTextChars: number, patch: Partial<PolishConfig> = {}) =>
+    baseConfig({ limits: { maxInputChars: 400, maxLines: 6, minChars: 1, maxTextChars }, ...patch })
+  const long = '这条消息特别长，长到已经超过上限了，群友看着就是一大坨字，根本不想读完，所以它不该当一个纯文本气泡发出去'
+
+  it('refuses a plain text bubble over the ceiling and names the two ways out', async () => {
+    const { host, requests, records } = harness(capped(20), [])
+    await host.open()
+    const draft = outgoing(long, 's1')
+    await host.beforeSend(draft)
+    assert.match(draft.drop ?? '', /没有发出/)
+    assert.match(draft.drop ?? '', /超过 20 字/)
+    assert.match(draft.drop ?? '', /markdown/)
+    assert.match(draft.drop ?? '', /typ2img/)
+    assert.equal(requests.length, 0, 'a refused message is never polished')
+    assert.equal(records[0]?.action, 'dropped')
+    assert.equal(records[0]?.reason, 'too-long')
+  })
+
+  it('runs whatever the polish switch says, including off', async () => {
+    const { host } = harness(capped(20, { rules: [{ sources: ['qq-groups'], enabled: false }] }), [])
+    await host.open()
+    const draft = outgoing(long, 's1')
+    await host.beforeSend(draft)
+    assert.match(draft.drop ?? '', /没有发出/)
+    assert.equal(host.resolve(host.subjectOf(CHAT, undefined)).enabled, false)
+  })
+
+  it('does not measure a message that really is markdown', async () => {
+    const { host } = harness(capped(20), [])
+    await host.open()
+    const list = ['- 第一条：装好依赖', '- 第二条：跑构建', '- 第三条：把产物推上去', '- 第四条：等 CI 绿了再合'].join('\n')
+    const draft = outgoing(h.markdown(list), 's1')
+    await host.beforeSend(draft)
+    assert.equal(draft.drop, undefined)
+    // …and a markdown document is not polished either: it is content, not chat.
+    assert.match((draft.content as { attrs: { content: string } }).attrs.content, /第一条/)
+  })
+
+  it('leaves an image and a short bubble alone', async () => {
+    const { host, requests } = harness(capped(20), ['好 我看看'])
+    await host.open()
+    const image = outgoing(h('message', long, h('img', { src: 'https://x/y.png' })), 's1')
+    await host.beforeSend(image)
+    assert.equal(image.drop, undefined, 'a picture is never measured')
+    const short = outgoing('好 我看看', 's1')
+    await host.beforeSend(short)
+    assert.equal(requests.length, 1)
+    assert.equal(short.drop, undefined)
+  })
+
+  it('keeps the draft when a rewrite outgrows the ceiling', async () => {
+    const draftText = '驱动太旧 更新就好'
+    const { host, records } = harness(capped(20), [
+      '这个问题是显卡驱动太旧导致的，把驱动更新到最新版本就可以了，更新完再开一次游戏试试看',
+    ])
+    await host.open()
+    const draft = outgoing(draftText, 's1')
+    await host.beforeSend(draft)
+    assert.equal(draft.drop, undefined)
+    assert.equal((draft.content as { attrs?: { content?: string } }).attrs?.content ?? draft.content, draftText)
+    assert.equal(records[0]?.action, 'kept')
+    assert.equal(records[0]?.reason, 'rewrite-too-long')
+  })
+})

@@ -49,25 +49,30 @@ export function readAnswer(raw: string, marker: string): PolishAnswer {
 
 /**
  * The guards a rewrite has to pass before it replaces what the agent wrote: a polished sentence is never worth a wrong
- * one. Anything that drops a link, a mention, a number or a markdown target, balloons in length, grows extra lines or
- * comes back empty is thrown away, and the caller sends the original instead.
+ * one. Anything that drops a link, a mention, a number or a markdown target, or comes back empty, is thrown away, and
+ * the caller sends the original instead.
+ *
+ * Length is not one of these guards. An earlier version refused a rewrite that grew past `maxOutputChars` or twice the
+ * draft's length; both numbers were guesses, and the useful ceiling is the one on the outgoing message itself
+ * (`limits.maxTextChars`, applied by the host on the text that is about to be published). What is still refused here is
+ * a rewrite that adds a line break the draft did not have: one message is one breath, and a rewrite may not turn it
+ * into two bubbles' worth of prose.
+ *
  * @param raw - the model's rewrite.
  * @param original - the text the agent wrote.
- * @param maxChars - the longest message the chat should receive.
- * @returns the cleaned rewrite, or undefined when it must not be used.
+ * @returns the cleaned rewrite.
  */
-export function acceptStyled(raw: string, original: string, maxChars: number): string | undefined {
-  return checkStyled(raw, original, maxChars).text
+export function acceptStyled(raw: string, original: string): string | undefined {
+  return checkStyled(raw, original).text
 }
 
 /**
  * {@link acceptStyled} with the reason a rewrite was refused, for the polish log.
  * @param raw - the model's rewrite.
  * @param original - the text the agent wrote.
- * @param maxChars - the longest message the chat should receive.
  * @returns the cleaned rewrite, or the reason it was refused.
  */
-export function checkStyled(raw: string, original: string, maxChars: number): { text?: string; reason?: string } {
+export function checkStyled(raw: string, original: string): { text?: string; reason?: string } {
   let out = String(raw ?? '').trim()
   if (!out) return { reason: 'empty' }
   // a fenced block, then a "改写：" style label the model sometimes prefixes
@@ -75,9 +80,6 @@ export function checkStyled(raw: string, original: string, maxChars: number): { 
   out = out.replace(/^(?:输出|改写|润色|重写|结果|回答|output|rewrite)\s*[:：]\s*/i, '').trim()
   out = unwrapQuotes(out)
   if (!out) return { reason: 'empty' }
-  if (out.length > maxChars) return { reason: 'too-long' }
-  // a rewrite twice the size (or 12 chars longer) is padding, not styling
-  if (out.length > Math.max(original.length * 2, original.length + 12)) return { reason: 'grew' }
   // one message must not turn into a paragraph of its own: a one-line sentence stays one line
   if (out.split('\n').length > Math.max(1, original.split('\n').length)) return { reason: 'extra-lines' }
   for (const url of original.match(/https?:\/\/[^\s，。）】)>\]]+/g) ?? []) {

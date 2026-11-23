@@ -1,6 +1,16 @@
 /**
  * The polish host: the `im/before-send` listener body, the polish log, and the per-chat switches.
  *
+ * Two things happen to one outgoing text, in this order:
+ *
+ * 1. **The length guard** (`limits.maxTextChars`). A message the platform draws as a single plain text bubble may not
+ *    be longer than the ceiling; one that is gets dropped with a reason the agent can act on (write it as markdown, or
+ *    render it with typst and send the picture). The guard is independent of the polish switch — it is a rule about
+ *    what the chat receives, not about how it is worded — and it never touches a message that really is markdown, an
+ *    image, a card or a file.
+ * 2. **The polish**, for the messages that are eligible (see {@link PolishHost.beforeSend}). A rewrite that grows past
+ *    the same ceiling is not used: the draft goes out.
+ *
  * One chat's sends are decided one at a time, so the second of two quick messages is compared with the first even
  * before the first was stored. Every decision is recorded (original, result, drop and reason) in the `im_polish`
  * domain for the panel, bounded by `maxRecords`.
@@ -13,6 +23,7 @@ import { resolveChat, type PolishConfig, type ResolvedChatConfig, type RuleSubje
 import { textContent } from './content.ts'
 import { imPolishDomain, type ChatOverride, type ImPolishDomain, type PolishRecord } from './domain.ts'
 import type { Complete } from './llm.ts'
+import { tooLongMessage, usesMarkdown } from './markdown.ts'
 import { decide, type PolishOutcome } from './polisher.ts'
 
 /** What the host needs from its surroundings; the service passes the live services, a test passes stubs. */
@@ -85,6 +96,11 @@ export class PolishHost {
 
   /**
    * Polish one outgoing publication in place: replace `content`, or set `drop`.
+   *
+   * The length guard runs first and independently of the polish switch: a message the platform draws as one plain
+   * text bubble may not exceed `limits.maxTextChars`, whether or not this chat gets its wording rewritten. A message
+   * that is really markdown (or an image, a card, a file — `textContent` refuses those) is not measured: a document
+   * is allowed to be long, a chat bubble is not.
    * @param outgoing - the draft of `im/before-send`.
    */
   async beforeSend(outgoing: ImOutgoing): Promise<void> {
@@ -92,17 +108,33 @@ export class PolishHost {
     const text = textContent(outgoing.content)
     if (text === undefined) return
     const subject = this.subjectOf(outgoing.chat, outgoing.options.session)
-    const chatConfig = this.resolve(subject)
-    if (!chatConfig.enabled) return
     const draft = text.text.trim()
     const { limits } = this.config
-    if (Array.from(draft).length < limits.minChars) return
+    const plain = (value: string): boolean => !text.markdown || !usesMarkdown(value)
+    const tooLong = (value: string): boolean => plain(value) && charCount(value) > limits.maxTextChars
+    if (tooLong(draft)) {
+      const message = tooLongMessage(charCount(draft), limits.maxTextChars)
+      outgoing.drop = message
+      this.deps.logger.info('IM polish dropped a %d-character text bubble in %s (limit %d)',
+        charCount(draft), outgoing.chat, limits.maxTextChars)
+      await this.record(outgoing.chat, subject, outgoing.options.session, draft, {
+        action: 'dropped', text: draft, reason: 'too-long', dropMessage: message, subs: [], attempts: [],
+      }, this.now())
+      return
+    }
+    const chatConfig = this.resolve(subject)
+    if (!chatConfig.enabled) return
+    if (charCount(draft) < limits.minChars) return
     if (draft.length > limits.maxInputChars || draft.split('\n').length > limits.maxLines) return
     // Code and tables are content: their wording is not the bot's voice.
     if (/```|^\s*\|.*\|\s*$/m.test(draft)) return
     await this.serial(outgoing.chat, async () => {
       const started = this.now()
-      const outcome = await this.decideFor(outgoing.chat, draft, text.markdown, chatConfig, outgoing.options.session)
+      let outcome = await this.decideFor(outgoing.chat, draft, text.markdown, chatConfig, outgoing.options.session)
+      // A rewrite may not turn a short bubble into a wall of text: the draft kept the ceiling, so it goes out instead.
+      if (outcome.action === 'rewritten' && tooLong(outcome.text)) {
+        outcome = { ...outcome, action: 'kept', text: draft, reason: 'rewrite-too-long' }
+      }
       if (outcome.action === 'dropped') outgoing.drop = outcome.dropMessage ?? 'repeat'
       else {
         if (outcome.action === 'rewritten') outgoing.content = text.rebuild(outcome.text)
@@ -350,6 +382,11 @@ export class PolishHost {
 function clip(text: string, max: number): string {
   const chars = Array.from(text)
   return chars.length > max ? `${chars.slice(0, max - 1).join('')}…` : text
+}
+
+/** Length in characters as a reader counts them (one emoji is one character, not two UTF-16 units). */
+function charCount(text: string): number {
+  return Array.from(text).length
 }
 
 function round(value: number): number {

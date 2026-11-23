@@ -1,26 +1,37 @@
 # dsh-im-polish
 
-Send-time wording polish for the [dsh-im](https://github.com/deepseek-ai/deepseek-harness) IM host.
+Send-time wording polish for the [dsh-im](https://github.com/deepseek-ai/deepseek-harness) IM host, and the ceiling
+on one plain text bubble.
 
 A session's text message is rewritten in a configured style right before it goes out — one fixed **main style**
 plus a few **sub-styles** drawn at random for every send — so successive messages do not all sound alike. The
 rewrite sees the chat it lands in: the last few messages (the bot's own included) and, listed apart, the bot's own
 last messages with the instruction not to sound like them. A message that only repeats what the bot just said is
-held back.
+held back, and one that would go out as a plain text bubble longer than `limits.maxTextChars` (120 by default) is
+refused: it belongs in a markdown message or in an image.
 
 ## How it works
 
 The plugin listens to the `im/before-send` waterfall of dsh-im (`ctx.im.send` only — streams and replayed operation
 ids are never rewritten):
 
-1. **Eligibility.** Only plain text and markdown are touched: a string, `<text>`, `<br>`, `<markdown>`, optionally in
-   one `<message>` root next to a `<quote>`. Messages with images, files, cards, buttons or mention elements, code
-   blocks, tables, more than `limits.maxLines` lines or `limits.maxInputChars` characters go out untouched.
+0. **Text bubble ceiling** (`limits.maxTextChars`, default 120). A message the platform will draw as one plain text
+   bubble may not be longer than that, whatever this chat's polish switch says: over the ceiling the send is
+   **dropped** with a reason the agent can act on — write it as markdown (headings, lists, code, tables, links; the
+   platform renders those), render it with typst and publish the picture with `im_send_file`, or cut it down. A message
+   that really is markdown is not measured (see `src/markdown.ts` for what counts as markdown: the constructs a
+   text-only renderer has no handler for), and neither is an image, a card or a file.
+1. **Eligibility.** For the polish, only plain text and markdown are touched: a string, `<text>`, `<br>`, `<markdown>`,
+   optionally in one `<message>` root next to a `<quote>`. Messages with images, files, cards, buttons or mention
+   elements, code blocks, tables, more than `limits.maxLines` lines or `limits.maxInputChars` characters go out as
+   written.
 2. **Rewrite.** One short model call (system prompt + one user message holding `<recent-chat>`, `<bot-recent>` and
    `<draft>`). The route is `model.provider`/`model.model`, or the sending session's own route when those are unset.
+   No output-token cap is set: the route's own budget applies, so a reasoning model that thinks first still has room
+   for the sentence.
 3. **Safety check** (`checkStyled`): a rewrite that loses a link, a markdown target, a mention, inline code or a
-   number, grows past twice the length (or 12 characters more), adds lines, or exceeds `limits.maxOutputChars` is
-   discarded and the original goes out.
+   number, or adds a line, is discarded and the original goes out. Length is not checked here; a rewrite that outgrows
+   the text bubble ceiling is discarded instead and the draft goes out.
 4. **Repeat guard**, two layers:
    - *prompt*: the model may answer with the skip marker (`<no-send/>`) when the draft's substance repeats one of the
      bot's recent messages. The marker is honoured only when the draft really is close to one of them
@@ -49,7 +60,7 @@ listener error never costs the agent its message.
 | `rules[]` | `[]` | Per-chat rules: `chats` (key or bare id), `sources`, `bots`, `presets`, `owners`; `enabled`, `style`, `note`. All matching rules apply in order |
 | `model.provider` / `model.model` | the session's route | Route of the rewrite call |
 | `model.reasoningEffort` | cheapest offered (`off`, else `low`) | Reasoning effort |
-| `model.temperature` / `maxTokens` / `timeoutMs` | `1` / `400` / `20000` | Sampling and bounds |
+| `model.temperature` / `timeoutMs` | `1` / `20000` | Sampling and deadline (no output-token cap: the route decides) |
 | `context.messages` | `12` | Recent chat messages shown |
 | `context.botMessages` | `5` | The bot's own messages listed and compared |
 | `context.maxChars` | `200` | Characters of one context message shown |
@@ -58,7 +69,8 @@ listener error never costs the agent its message.
 | `repeat.windowMs` | 30 min | How far back the bot's messages count |
 | `repeat.retry` / `drop` | `true` / `true` | Retry with feedback; drop a remaining repeat |
 | `repeat.modelDrop` / `modelDropMinSimilarity` | `true` / `0.45` | Honour the skip marker, and when |
-| `limits.maxInputChars` / `maxLines` / `maxOutputChars` / `minChars` | `400` / `6` / `600` / `1` | Eligibility and output bounds |
+| `limits.maxInputChars` / `maxLines` / `minChars` | `400` / `6` / `1` | Polish eligibility bounds |
+| `limits.maxTextChars` | `120` | Longest plain text bubble; longer content must be markdown or an image |
 | `skipMarker` | `<no-send/>` | The do-not-send answer |
 | `maxRecords` | `1000` | Records kept for the panel |
 

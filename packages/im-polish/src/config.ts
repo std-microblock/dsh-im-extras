@@ -63,8 +63,6 @@ export interface ModelConfig {
   reasoningEffort?: string
   /** Sampling temperature: higher means more varied wording. */
   temperature: number
-  /** Output-token cap of one rewrite. */
-  maxTokens: number
   /** Deadline of one rewrite call; the original goes out when it passes. */
   timeoutMs: number
 }
@@ -100,16 +98,20 @@ export interface ContextConfig {
   maxChars: number
 }
 
-/** Which messages are eligible at all. */
+/** Which messages are eligible at all, and how long a plain text bubble may be. */
 export interface LimitsConfig {
   /** Longer messages go out untouched: long answers are content, not chat. */
   maxInputChars: number
   /** Messages with more lines go out untouched. */
   maxLines: number
-  /** Longest rewrite accepted. */
-  maxOutputChars: number
   /** Shorter messages go out untouched. */
   minChars: number
+  /**
+   * Longest text a message may carry when it goes out as a plain text bubble. Longer content is refused with a reason
+   * the agent can act on: it belongs in a markdown message (headings, lists, code, links — the platform renders it) or
+   * in an image, not in a wall of chat text. A message that really is markdown is not measured by this.
+   */
+  maxTextChars: number
 }
 
 /** Validated operator configuration. */
@@ -172,7 +174,6 @@ export const Config: z<PolishConfig> = z.object({
     model: z.string(),
     reasoningEffort: z.string(),
     temperature: z.number().min(0).max(2).default(1),
-    maxTokens: z.natural().min(1).default(400),
     timeoutMs: z.natural().min(1).default(20_000),
   }),
   context: z.object({
@@ -192,8 +193,8 @@ export const Config: z<PolishConfig> = z.object({
   limits: z.object({
     maxInputChars: z.natural().min(1).default(400),
     maxLines: z.natural().min(1).default(6),
-    maxOutputChars: z.natural().min(1).default(600),
     minChars: z.natural().default(1),
+    maxTextChars: z.natural().min(1).default(120),
   }),
   skipMarker: z.string().default('<no-send/>'),
   maxRecords: z.natural().min(1).default(1000),

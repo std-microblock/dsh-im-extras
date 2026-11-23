@@ -275,7 +275,9 @@ export function applyTools(tools: ToolsLike, host: DispatchHost, config: Dispatc
       name: 'router_reply',
       description: 'Router only: send a concise markdown reply directly to the user for simple greetings, '
         + 'clarifications, or answers already known from chat/chronicle context. Never call this together with '
-        + 'create_task or route_messages_to_task for the same request.',
+        + 'create_task or route_messages_to_task for the same request. It lands as one chat bubble: plain prose over '
+        + '120 characters is refused, so anything longer has to be a real markdown message (headings, lists, code '
+        + 'blocks, links) or a picture a task renders with typst — or a task of its own.',
       parameters: {
         text: { type: 'string', required: true, description: 'Concise markdown message to send.' },
         quote: {

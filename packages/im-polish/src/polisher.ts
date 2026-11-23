@@ -12,7 +12,7 @@
  *    it resembles; when that is still too close, the original goes out if it is not a repeat itself, and otherwise
  *    the send is dropped with a reason the agent can act on.
  *
- * A rewrite that fails the safety check (`checkStyled`: lost link, mention, number, code, runaway length) is never
+ * A rewrite that fails the safety check (`checkStyled`: lost link, mention, number or code, extra lines) is never
  * used; the original goes out instead, still subject to the repeat check. A failed or timed-out model call does the
  * same. This module performs no I/O besides the injected completion function.
  *
@@ -90,8 +90,7 @@ export async function decide(
   if (input.route === undefined) reason = 'no-route'
   else {
     const system = polishSystem({
-      style: input.style, subs, maxChars: config.limits.maxOutputChars, markdown: input.markdown,
-      marker, allowSkip, note: input.note,
+      style: input.style, subs, markdown: input.markdown, marker, allowSkip, note: input.note,
     })
     let feedback: { attempt: string; similar: string; score: number } | undefined
     const rounds = repeat.retry ? 2 : 1
@@ -107,7 +106,6 @@ export async function decide(
             ...feedback === undefined ? {} : { feedback },
           }),
           temperature: config.model.temperature,
-          maxTokens: config.model.maxTokens,
           reasoningEffort: config.model.reasoningEffort,
           timeoutMs: config.model.timeoutMs,
           signal: input.signal,
@@ -132,7 +130,7 @@ export async function decide(
         reason = 'skip-ignored'
         break
       }
-      const checked = checkStyled(answer.text, input.draft, config.limits.maxOutputChars)
+      const checked = checkStyled(answer.text, input.draft)
       if (checked.text === undefined) {
         attempts.push({ raw, verdict: `rejected ${checked.reason ?? ''}`.trim() })
         reason = `rejected ${checked.reason ?? ''}`.trim()

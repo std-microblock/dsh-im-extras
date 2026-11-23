@@ -1,17 +1,22 @@
 /**
- * `dsh-im-polish`: send-time wording polish for dsh-im.
+ * `dsh-im-polish`: send-time wording polish for dsh-im, plus the ceiling on one plain text bubble.
  *
- * The plugin listens to `im/before-send`. A text or markdown message a session publishes through `ctx.im.send` is
- * rewritten in the configured style — one main style plus a few sub-styles drawn at random per send — by a short
- * model call that also sees the chat's recent messages and the bot's own last few, so successive messages neither
- * sound alike nor say the same thing twice. A rewrite that loses a link, a mention, a number or code, or grows too
- * long, is discarded and the original goes out. A message that repeats one of the bot's recent messages (bigram Dice
- * at or above `repeat.threshold`, or the model's skip marker on a draft that is close to one) is retried once with
- * feedback and otherwise dropped: the send then reports `dropped: true` with a reason the agent reads.
+ * The plugin listens to `im/before-send`. A text message longer than `limits.maxTextChars` that the platform would draw
+ * as one plain text bubble is dropped with a reason the agent can act on: write it as markdown (headings, lists, code,
+ * links — the platform renders those), render it with typst and send the picture, or cut it down. A message that really
+ * is markdown, an image, a card or a file is not measured.
+ *
+ * A message that passes the ceiling and is eligible is rewritten in the configured style — one main style plus a few
+ * sub-styles drawn at random per send — by a short model call that also sees the chat's recent messages and the bot's
+ * own last few, so successive messages neither sound alike nor say the same thing twice. A rewrite that loses a link,
+ * a mention, a number or code, or adds a line break, is discarded and the original goes out; a rewrite that outgrows
+ * the ceiling is discarded the same way. A message that repeats one of the bot's recent messages (bigram Dice at or
+ * above `repeat.threshold`, or the model's skip marker on a draft that is close to one) is retried once with feedback
+ * and otherwise dropped: the send then reports `dropped: true` with a reason the agent reads.
  *
  * Messages with images, files, cards or other elements, streams, code blocks, tables and long answers are left
- * untouched. Every decision is recorded in the `im_polish` storage domain; `ctx.imPolish` lists the records, counts
- * them, previews a decision and switches the polish per chat for the panel.
+ * unchecked by the polish. Every decision is recorded in the `im_polish` storage domain; `ctx.imPolish` lists the
+ * records, counts them, previews a decision and switches the polish per chat for the panel.
  *
  * @module dsh-im-polish
  */
@@ -35,6 +40,7 @@ export { textContent, type TextContent } from './content.ts'
 export { imPolishDomain, type ChatOverride, type ImPolishDomain, type PolishRecord } from './domain.ts'
 export { PolishHost, type PolishHostDeps, type PolishRecordFilter, type PolishStats } from './host.ts'
 export { complete, COMPLETION_TIMEOUT_CODE, type Complete, type CompletionRequest } from './llm.ts'
+export { tooLongMessage, usesMarkdown } from './markdown.ts'
 export { decide, repeatMessage, type PolishAttempt, type PolishInput, type PolishOutcome } from './polisher.ts'
 export { applyPanel, POLISH_TAB, polishTab, type PanelHost, type PanelTabDefinition } from './panel.ts'
 export { polishSystem, polishUser, type SystemPromptInput, type UserPromptInput } from './prompt.ts'

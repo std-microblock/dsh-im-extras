@@ -44,24 +44,24 @@ describe('style guards', () => {
   })
 
   it('accepts a faithful rewrite and strips labels and quotes', () => {
-    assert.equal(acceptStyled('改写：「好 我看看」', '好的，我看一下', 100), '好 我看看')
-    assert.equal(acceptStyled('```\n嗯 收到\n```', '收到了', 100), '嗯 收到')
+    assert.equal(acceptStyled('改写：「好 我看看」', '好的，我看一下'), '好 我看看')
+    assert.equal(acceptStyled('```\n嗯 收到\n```', '收到了'), '嗯 收到')
   })
 
-  it('refuses rewrites that lose links, mentions, numbers or code, or grow', () => {
+  it('refuses rewrites that lose links, mentions, numbers or code, or add a line', () => {
     const original = '版本 1.2.3 修了，见 https://example.com/x 和 `npm run build` @小明'
-    assert.equal(checkStyled('修了 去看 @小明', original, 200).reason?.split(' ')[0], 'lost-link')
-    assert.equal(checkStyled('1.2.3 修了 https://example.com/x `npm run build`', original, 200).reason?.split(' ')[0], 'lost-mention')
-    assert.equal(checkStyled('修了 https://example.com/x `npm run build` @小明', original, 200).reason?.split(' ')[0], 'lost-number')
-    assert.equal(checkStyled('1.2.3 修了 https://example.com/x @小明', original, 200).reason?.split(' ')[0], 'lost-code')
-    assert.ok(acceptStyled('1.2.3 修好啦 见 https://example.com/x 跑 npm run build @小明', original, 200))
-    assert.equal(checkStyled('好的好的好的好的好的好的好的好的', '好的', 200).reason, 'grew')
-    assert.equal(checkStyled('一\n二', '一二', 200).reason, 'extra-lines')
-    assert.equal(checkStyled('abc', 'abcd', 2).reason, 'too-long')
-    assert.equal(checkStyled('   ', 'abc', 200).reason, 'empty')
-    assert.equal(checkStyled('看 [文档](https://a.b/c)', '看看[文档](https://a.b/c)', 200).text, '看 [文档](https://a.b/c)')
-    assert.equal(checkStyled('<at user_id="u1">甲</at> 好', '<at user_id="u1">甲</at> 好的', 200).text, '<at user_id="u1">甲</at> 好')
-    assert.equal(checkStyled('好', '<at user_id="u1">甲</at> 好的', 200).reason?.split(' ')[0], 'lost-mention')
+    assert.equal(checkStyled('修了 去看 @小明', original).reason?.split(' ')[0], 'lost-link')
+    assert.equal(checkStyled('1.2.3 修了 https://example.com/x `npm run build`', original).reason?.split(' ')[0], 'lost-mention')
+    assert.equal(checkStyled('修了 https://example.com/x `npm run build` @小明', original).reason?.split(' ')[0], 'lost-number')
+    assert.equal(checkStyled('1.2.3 修了 https://example.com/x @小明', original).reason?.split(' ')[0], 'lost-code')
+    assert.ok(acceptStyled('1.2.3 修好啦 见 https://example.com/x 跑 npm run build @小明', original))
+    // no length cap on a rewrite: a longer wording is fine, the outgoing message has its own ceiling
+    assert.ok(acceptStyled('好的好的好的好的好的好的好的好的', '好的'))
+    assert.equal(checkStyled('一\n二', '一二').reason, 'extra-lines')
+    assert.equal(checkStyled('   ', 'abc').reason, 'empty')
+    assert.equal(checkStyled('看 [文档](https://a.b/c)', '看看[文档](https://a.b/c)').text, '看 [文档](https://a.b/c)')
+    assert.equal(checkStyled('<at user_id="u1">甲</at> 好', '<at user_id="u1">甲</at> 好的').text, '<at user_id="u1">甲</at> 好')
+    assert.equal(checkStyled('好', '<at user_id="u1">甲</at> 好的').reason?.split(' ')[0], 'lost-mention')
   })
 
   it('reads the skip marker, fenced or quoted', () => {
