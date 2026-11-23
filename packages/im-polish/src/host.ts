@@ -110,15 +110,13 @@ export class PolishHost {
     const subject = this.subjectOf(outgoing.chat, outgoing.options.session)
     const draft = text.text.trim()
     const { limits } = this.config
-    const plain = (value: string): boolean => !text.markdown || !usesMarkdown(value)
-    const tooLong = (value: string): boolean => plain(value) && charCount(value) > limits.maxTextChars
-    if (tooLong(draft)) {
-      const message = tooLongMessage(charCount(draft), limits.maxTextChars)
-      outgoing.drop = message
+    const refused = this.ceiling(draft, text.markdown)
+    if (refused !== undefined) {
+      outgoing.drop = refused
       this.deps.logger.info('IM polish dropped a %d-character text bubble in %s (limit %d)',
         charCount(draft), outgoing.chat, limits.maxTextChars)
       await this.record(outgoing.chat, subject, outgoing.options.session, draft, {
-        action: 'dropped', text: draft, reason: 'too-long', dropMessage: message, subs: [], attempts: [],
+        action: 'dropped', text: draft, reason: 'too-long', dropMessage: refused, subs: [], attempts: [],
       }, this.now())
       return
     }
@@ -132,7 +130,7 @@ export class PolishHost {
       const started = this.now()
       let outcome = await this.decideFor(outgoing.chat, draft, text.markdown, chatConfig, outgoing.options.session)
       // A rewrite may not turn a short bubble into a wall of text: the draft kept the ceiling, so it goes out instead.
-      if (outcome.action === 'rewritten' && tooLong(outcome.text)) {
+      if (outcome.action === 'rewritten' && this.ceiling(outcome.text, text.markdown) !== undefined) {
         outcome = { ...outcome, action: 'kept', text: draft, reason: 'rewrite-too-long' }
       }
       if (outcome.action === 'dropped') outgoing.drop = outcome.dropMessage ?? 'repeat'
@@ -145,6 +143,19 @@ export class PolishHost {
   }
 
   /**
+   * The refusal of a message that would go out as one plain text bubble above the ceiling.
+   * @param value - the text of the message (or of a rewrite of it).
+   * @param markdown - the message travels in a `<markdown>` element; prose in one still renders as plain text.
+   * @returns what the agent reads when the message is refused, or undefined when it may go out as it is.
+   */
+  ceiling(value: string, markdown: boolean): string | undefined {
+    const text = value.trim()
+    if (markdown && usesMarkdown(text)) return undefined
+    const { maxTextChars } = this.config.limits
+    return charCount(text) > maxTextChars ? tooLongMessage(charCount(text), maxTextChars) : undefined
+  }
+
+  /**
    * What the polish would do with one text in one chat, without sending or recording anything (panel preview).
    * @param chat - the chat key.
    * @param draft - the text.
@@ -153,7 +164,13 @@ export class PolishHost {
    */
   async preview(chat: ImChatKey, draft: string, session?: string): Promise<PolishOutcome> {
     const subject = this.subjectOf(chat, session)
-    return this.decideFor(chat, draft.trim(), false, this.resolve(subject), session)
+    const text = draft.trim()
+    // The preview answers the same question a send would, ceiling included.
+    const refused = this.ceiling(text, false)
+    if (refused !== undefined) {
+      return { action: 'dropped', text, reason: 'too-long', dropMessage: refused, subs: [], attempts: [] }
+    }
+    return this.decideFor(chat, text, false, this.resolve(subject), session)
   }
 
   private async decideFor(

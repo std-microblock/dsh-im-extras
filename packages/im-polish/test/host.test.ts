@@ -206,4 +206,17 @@ describe('the text bubble ceiling', () => {
     assert.equal(records[0]?.action, 'kept')
     assert.equal(records[0]?.reason, 'rewrite-too-long')
   })
+
+  it('answers the same question in the panel preview', async () => {
+    const { host, requests } = harness(capped(20), ['好 我看看'])
+    await host.open()
+    const refused = await host.preview(CHAT, long, 's1')
+    assert.equal(refused.action, 'dropped')
+    assert.equal(refused.reason, 'too-long')
+    assert.match(refused.dropMessage ?? '', /超过 20 字/)
+    assert.equal(requests.length, 0, 'a refused preview never calls the model')
+    const rewritten = await host.preview(CHAT, '好 我看一下', 's1')
+    assert.equal(rewritten.action, 'rewritten')
+    assert.equal(rewritten.text, '好 我看看')
+  })
 })
