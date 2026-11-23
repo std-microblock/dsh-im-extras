@@ -42,8 +42,8 @@ import type { ProgressSource } from './progress.ts'
 import type { TurnCardService } from './cards.ts'
 import { NO_OUTPUT_TOOL } from './tools.ts'
 import {
-  answerOf, boundedAnswer, closingContent, finalContent, footerLine, runningContent, slottedContent, stopTargetOf,
-  type SummaryPlan,
+  answerOf, boundedAnswer, closingContent, failureOf, finalContent, footerLine, runningContent, slottedContent,
+  stopTargetOf, type SummaryPlan,
 } from './view.ts'
 
 /** `spec.output` value that selects this renderer. */
@@ -84,6 +84,13 @@ export class SummaryRenderer implements ImOutputRenderer {
   private readonly turns = new Map<SessionId, SummaryTurn>()
 
   /**
+   * The failure each session last reported to its chat, as the reader saw it. A session whose next turn fails the
+   * same way says nothing new: one dropped execution environment used to post the same card into a group once per
+   * wake — three times in forty seconds on 2026-11-23 — until a turn succeeded again.
+   */
+  private readonly failures = new Map<SessionId, string>()
+
+  /**
    * @param config - resolved operator configuration.
    * @param progress - progress-summary feed; without it (or with `config.progress` off) no summary is shown.
    * @param logger - optional diagnostic sink for the per-turn rendering plan.
@@ -103,7 +110,7 @@ export class SummaryRenderer implements ImOutputRenderer {
     const sessionId = activity.session.sessionId
     const turn = new SummaryTurn(activity, io, this.config, () => {
       if (this.turns.get(sessionId) === turn) this.turns.delete(sessionId)
-    }, this.config.progress ? this.progress : undefined, this.logger, this.cards?.(), this.compose, this.hasAuth)
+    }, this.failures, this.config.progress ? this.progress : undefined, this.logger, this.cards?.(), this.compose, this.hasAuth)
     this.turns.set(sessionId, turn)
     return turn
   }
@@ -171,6 +178,8 @@ class SummaryTurn implements ImTurnOutput {
     private readonly config: SummaryConfig,
     /** Drops this turn from the renderer's registry, so a later `no_output` call reaches the next turn. */
     private readonly release: () => void,
+    /** The failure this session last reported, shared across its turns (see {@link SummaryRenderer.failures}). */
+    private readonly failures: Map<SessionId, string>,
     private readonly progress?: ProgressSource,
     private readonly logger?: SummaryLog,
     private readonly cardService?: TurnCardService,
@@ -197,6 +206,26 @@ class SummaryTurn implements ImTurnOutput {
       // A silenced turn leaves the chat as it found it: nothing is settled, no closing line is posted.
       this.unwatch?.()
       this.plan?.cards?.dispose()
+      return
+    }
+    const sessionId = activity.session.sessionId
+    const failure = activity.status === 'error' && activity.error !== undefined ? failureOf(activity.error) : undefined
+    const repeated = failure !== undefined && this.failures.get(sessionId) === failure
+    if (failure === undefined) this.failures.delete(sessionId)
+    else this.failures.set(sessionId, failure)
+    if (repeated) {
+      // The chat heard this exact failure from the previous turn and nothing has succeeded since: say it again by
+      // staying quiet, and only take the process card back to its collapsed state.
+      this.unwatch?.()
+      const stream = this.ready === undefined ? undefined : await this.ready
+      const plan = this.plan ?? this.resolveFinalPlan(activity)
+      plan.cards?.dispose()
+      if (this.published && stream !== undefined) {
+        const processChildren = plan.editing ? this.contribute('process', activity, () => []) : []
+        if (processChildren.length > 0) await this.closeStream(stream, h('message', ...processChildren), activity)
+        else await stream.abort({ recall: true, reason: 'repeated failure' })
+      }
+      this.logger?.info('IM output summary of session %s repeats the failure its chat already read; staying quiet', sessionId)
       return
     }
     const stream = this.ready === undefined ? undefined : await this.ready

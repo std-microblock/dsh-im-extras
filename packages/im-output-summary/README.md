@@ -15,6 +15,12 @@ work. When the turn ends:
   result message directly.
 - Without `process` contributions, the streamed card settles into the final answer in place as before.
 
+A failed turn is reported as a failure, not as an answer. Its closing line names the outcome in the reader's terms —
+a dropped execution environment reads `执行环境的连接断开…` instead of the raw `connection closed` and the path behind
+it — and any text the turn managed to produce arrives above it under a `不是最终结论` marker, so a half-written
+paragraph or a line of the model's own narration is never mistaken for the result. A session that fails the same way
+again before a turn succeeds keeps quiet: one broken environment used to post the same card into a chat once per wake.
+
 The renderer never names a platform: it builds platform-neutral elements and lets the IM host publish them, so a mode
 that cannot rewrite a message shows less instead of lying (`README` of `cordis-plugin-im-core`, "Streaming").
 

@@ -207,7 +207,7 @@ function turnHarness(options: {
   const { io, streams, sent } = sink()
   const first = options.first ?? activity()
   const output = renderer.begin(first, io)
-  return { renderer, output, streams, sent }
+  return { renderer, output, io, streams, sent }
 }
 
 /** Let the renderer's own promise chain settle. */
@@ -315,6 +315,41 @@ test('a streamed turn that fails without an answer collapses its process card an
   assert.equal(sent.length, 1)
   assert.match(textOf(sent[0]), /出错：boom/)
   assert.equal(linkOf(sent[0]), undefined)
+})
+
+test('a failed turn rewrites an infrastructure error and marks the text it managed to produce', async () => {
+  const { output, streams, sent } = turnHarness({ contribute: true })
+  await settled()
+  await output.end(activity([text('Now update the two call sites:')], 'error', '/home/agent/work: connection closed'))
+  assert.equal(linkOf(streams[0]!.closedWith), PAGE)
+  assert.equal(sent.length, 1)
+  // The reader's text stays, marked as unfinished, and the raw path never reaches the chat.
+  assert.match(textOf(sent[0]), /Now update the two call sites/)
+  assert.match(textOf(sent[0]), /部分内容/)
+  assert.match(textOf(sent[0]), /执行环境的连接断开/)
+  assert.doesNotMatch(textOf(sent[0]), /home\/agent/)
+})
+
+test('the same failure that follows an identical one is not posted again, and a success clears the memory', async () => {
+  const h = turnHarness({ contribute: true })
+  await settled()
+  await h.output.end(activity([], 'error', '/home/agent/work: connection closed'))
+  assert.equal(h.sent.length, 1)
+
+  // A second turn that fails the same way says nothing new.
+  const second = h.renderer.begin(activity(), h.io)
+  await settled()
+  await second.end(activity([], 'error', 'EnvError: CLOSED connection closed'))
+  assert.equal(h.sent.length, 1)
+
+  // A turn that settles fine clears it, so the next failure is worth saying again.
+  const third = h.renderer.begin(activity(), h.io)
+  await settled()
+  await third.end(activity([text('好了')], 'done'))
+  const fourth = h.renderer.begin(activity(), h.io)
+  await settled()
+  await fourth.end(activity([], 'error', '/home/agent/work: connection closed'))
+  assert.equal(h.sent.length, 3)
 })
 
 test('a streamed turn that finishes with no answer keeps the collapsed process link card instead of recalling', async () => {

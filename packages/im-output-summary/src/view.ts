@@ -186,6 +186,35 @@ export function boundedError(message: string): string {
 }
 
 /**
+ * Failures the chat is told in its own terms: an execution environment that dropped mid-turn is an operator problem
+ * on our side, and the raw text names a path the reader cannot act on (`/home/agent/work: connection closed`).
+ */
+const FAILURE_REWRITES: readonly { readonly match: RegExp; readonly text: string }[] = [
+  {
+    match: /connection closed|EnvError|ssh connection closed|\bCLOSED\b/i,
+    text: '执行环境的连接断开了，这一轮没能跑完（不是你的问题），稍后重试即可',
+  },
+  {
+    match: /timed? ?out|ETIMEDOUT|TimeoutError/i,
+    text: '这一轮超时了，没能跑完，稍后重试即可',
+  },
+]
+
+/**
+ * The reader-facing account of a failed turn: a known infrastructure failure in plain words, anything else as the
+ * bounded raw text.
+ * @param message - the raw error text.
+ * @returns the one-line failure text, cut at {@link SUMMARY_ERROR_CHARS}.
+ */
+export function failureOf(message: string): string {
+  const bounded = boundedError(message)
+  for (const rewrite of FAILURE_REWRITES) {
+    if (rewrite.match.test(bounded)) return rewrite.text
+  }
+  return bounded
+}
+
+/**
  * The stop control of this turn's session (this plugin routes `summary:stop:<sessionId>` to `sessions.stop`).
  *
  * A `<fallback>`: an action button where the mode renders one, and a line telling the reader how to stop everywhere
@@ -223,7 +252,7 @@ export function footerLine(activity: ImActivity, plan: SummaryPlan): Child[] {
     ]
   }
   if (activity.status === 'error' && activity.error !== undefined) {
-    return [h.text(`${base} · ${plan.strings.error(boundedError(activity.error))}`)]
+    return [h.text(`${base} · ${plan.strings.error(failureOf(activity.error))}`)]
   }
   return [h.text(base)]
 }
@@ -264,8 +293,13 @@ export function runningContent(
  */
 export function finalContent(activity: ImActivity, plan: SummaryPlan): Child[] | undefined {
   const answer = boundedAnswer(activity, plan.maxChars, plan.strings)
-  if (answer) return [...answerBody(answer, plan), h('small', ...footerLine(activity, plan))]
-  if (activity.error !== undefined) return [h('small', h.text(plan.strings.error(boundedError(activity.error))))]
+  if (answer) {
+    // A failed turn's text is what it managed to say before it broke: mark it, so nobody reads half an answer — or a
+    // line of the model's own narration — as the conclusion.
+    const partial = activity.status === 'error' ? [h('small', h.text(plan.strings.partial))] : []
+    return [...answerBody(answer, plan), ...partial, h('small', ...footerLine(activity, plan))]
+  }
+  if (activity.error !== undefined) return [h('small', h.text(plan.strings.error(failureOf(activity.error))))]
   return undefined
 }
 

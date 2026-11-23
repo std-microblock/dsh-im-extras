@@ -13,6 +13,8 @@ export interface SummaryStrings {
   elapsed(ms: number): string
   /** Note appended to an answer cut at `maxChars`. */
   truncated: string
+  /** Line above the answer of a turn that failed after it had said something: that text is not the conclusion. */
+  partial: string
   /** Closing line of a turn that answered nothing and could not be recalled. */
   done: string
   /** Closing line of a failed turn that answered nothing. */
@@ -37,6 +39,7 @@ const zh: SummaryStrings = {
     ? `${(Math.max(0, ms) / 1000).toFixed(1)} 秒`
     : `${Math.floor(ms / 60_000)} 分 ${Math.floor((ms % 60_000) / 1000)} 秒`),
   truncated: '（内容过长，已截断）',
+  partial: '⚠️ 这一轮中途失败，以上是失败前已产出的部分内容，不是最终结论',
   done: '已完成',
   error: message => `出错：${message}`,
   cancelled: '已取消',
@@ -54,6 +57,7 @@ const en: SummaryStrings = {
     ? `${(Math.max(0, ms) / 1000).toFixed(1)}s`
     : `${Math.floor(ms / 60_000)}m ${Math.floor((ms % 60_000) / 1000)}s`),
   truncated: '(truncated, the answer is too long)',
+  partial: '⚠️ This turn failed part way; the text above is what it produced before failing, not a conclusion',
   done: 'Done',
   error: message => `Error: ${message}`,
   cancelled: 'cancelled',

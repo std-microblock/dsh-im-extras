@@ -60,7 +60,7 @@ export {
 } from './renderer.ts'
 export { applyNoOutputTool, GUIDANCE, GUIDANCE_ORDER, GUIDANCE_SECTION, NO_OUTPUT_TOOL } from './tools.ts'
 export {
-  answerBody, answerOf, AUTH_STOP_BUTTON_PREFIX, LEGACY_STOP_BUTTON_PREFIX, STOP_BUTTON_PREFIX, stopTargetOf, boundedAnswer, slottedContent, boundedError, closingContent, finalContent,
+  answerBody, answerOf, AUTH_STOP_BUTTON_PREFIX, LEGACY_STOP_BUTTON_PREFIX, STOP_BUTTON_PREFIX, stopTargetOf, boundedAnswer, slottedContent, boundedError, failureOf, closingContent, finalContent,
   footerLine, runningContent, runningTool, statusLine, stopButton, SUMMARY_ERROR_CHARS, toolCalls, type SummaryPlan,
 } from './view.ts'
 
