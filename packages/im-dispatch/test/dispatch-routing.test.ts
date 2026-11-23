@@ -310,6 +310,10 @@ test('5-step router guardrail warns on maxRouterSteps, forces wrap-up at +1, and
   if (step5.kind === 'enter') {
     assert.equal(step5.messages.length, 2)
     assert.match(String(step5.messages[1]?.content[0]?.text), /第 5\/5 步/)
+    // The notice is a real user message: a later `agent/pre-step` listener reads `source.kind` on every message,
+    // so a bare `{ role, content }` fails the whole turn.
+    assert.equal(typeof step5.messages[1]?.id, 'string')
+    assert.equal((step5.messages[1]?.source as { kind?: string } | undefined)?.kind, 'im-dispatch')
   }
 
   // Step 6 appends hard wrap-up order.

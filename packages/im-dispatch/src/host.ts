@@ -6,6 +6,7 @@
  * @module dsh-im-dispatch/host
  */
 
+import { randomUUID } from 'node:crypto'
 import { isAbsolute } from 'node:path'
 import { newQuickJSWASMModule, type QuickJSWASMModule } from '@tootallnate/quickjs-emscripten'
 import { EphemeralTracker, isEphemeralSelfMessage, type ChronicleQueryResult, type ChronicleService, type ChronicleStatus } from './chronicle/index.ts'
@@ -45,6 +46,29 @@ const MAX_CHAT_TEXT_CHARS = 500
 const PROACTIVE_WINDOW_MS = 3_600_000
 const CHAT_NAME_PROBE_INTERVAL_MS = 10 * 60_000
 const CHAT_NAME_PROBE_TIMEOUT_MS = 3000
+
+/**
+ * Source of the guardrail notice injected into a router step. `source` is not optional in practice: a later
+ * `agent/pre-step` listener reads `message.source.kind` on every claimed message, so a bare `{ role, content }`
+ * takes the whole turn — and the messages it was carrying — down with a `Cannot read properties of undefined`
+ * error. `form: 'notice'` matches the harness vocabulary for a one-line account of what happened.
+ */
+const GUARDRAIL_SOURCE = 'im-dispatch'
+
+/**
+ * The step-limit notice as a message the loop and every later listener can consume: an identity, and the source
+ * kind above.
+ * @param text - the notice text.
+ * @returns the user-role notice message to append to the step's decision.
+ */
+function guardrailNotice(text: string): PreStepMessageLike {
+  return {
+    role: 'user',
+    id: randomUUID(),
+    content: [{ type: 'text', text }],
+    source: { kind: GUARDRAIL_SOURCE, form: 'notice', summary: 'Router 步数上限提醒' },
+  }
+}
 const MAX_PENDING_REACTIONS = 100
 const MAX_USER_NAMES = 4000
 const REACTION_PREVIEW_CHARS = 80
@@ -616,13 +640,7 @@ export class DispatchHost {
     const notice = steps === limit
       ? `⚠️ [Router 步数上限提醒] 当前已是本轮第 ${steps}/${limit} 步。请在当前步骤立即收口：能直接答复的用 router_reply 简短回答，需要调查/写代码/查文档/耗时处理的立刻用 create_task / route_messages_to_task / steer_task 派发给后台 Worker，不要继续调用只读搜索工具。`
       : `⛔ [Router 步数已达硬上限 ${steps}] 禁止继续发起新的调研/搜索工具，请立即结束本轮！`
-    return {
-      ...decision,
-      messages: [
-        ...decision.messages,
-        { role: 'user', content: [{ type: 'text', text: notice }] },
-      ],
-    }
+    return { ...decision, messages: [...decision.messages, guardrailNotice(notice)] }
   }
 
   // ---------------------------------------------------------------------------------------------------------------
