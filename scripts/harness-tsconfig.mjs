@@ -45,6 +45,7 @@ const HARNESS_PEERS = {
   '@deepseek-ai/dsh-llm': 'packages/llm/llm/lib/types/index.d.ts',
   '@deepseek-ai/dsh-session': 'packages/core/session/lib/types/index.d.ts',
   '@deepseek-ai/dsh-session/types': 'packages/core/session/lib/types/types.d.ts',
+  '@deepseek-ai/dsh-session-query': 'packages/session-query/session-query/lib/types/index.d.ts',
   '@deepseek-ai/dsh-skill': 'packages/skill/skill/lib/types/index.d.ts',
   '@deepseek-ai/dsh-storage-domain': 'packages/storage/storage-domain/lib/types/index.d.ts',
   '@deepseek-ai/dsh-system-prompt': 'packages/core/system-prompt/lib/types/index.d.ts',

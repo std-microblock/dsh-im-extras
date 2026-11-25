@@ -606,3 +606,107 @@ test('summary:stop and legacy dsh:stop clicks stop a session bound to the button
   const mention = nodesOf(streams[0].closedWith).find(entry => entry.type === 'at')
   assert.deepEqual(mention?.attrs, { type: 'user', id: 'ou_1', name: '甲' })
 })
+
+test('graceful restart keeps the handle and updates the card in place, then the next turn resumes on it', async () => {
+  const stored = new Map<string, { chat: ImChatKey; handle: any }>()
+  const handleStore = {
+    get: (sid: SessionId, chat: ImChatKey) => {
+      const hit = stored.get(sid)
+      return hit?.chat === chat ? hit.handle : undefined
+    },
+    save: (sid: SessionId, chat: ImChatKey, handle: any) => { stored.set(sid, { chat, handle }) },
+    clear: (sid: SessionId) => { stored.delete(sid) },
+  }
+  const renderer = new SummaryRenderer(
+    config({ firstOutput: 'first-tool' }),
+    undefined, undefined, undefined, undefined, undefined, handleStore,
+  )
+  const openedOptions: any[] = []
+  const streams: any[] = []
+  const sent: any[] = []
+  const io: ImOutputIO = {
+    chat: CHAT,
+    stream: async (opts: any) => {
+      openedOptions.push(opts)
+      const handle = opts?.resumeHandle ?? {
+        bot: 'lark:app',
+        target: { chat: { id: 'oc_1', type: 'group' } },
+        mode: 'card',
+        parts: [{ id: 'om_orig', kind: 'card-inline', time: 1 }],
+        createdAt: 1,
+        edits: 0,
+        content: h('message'),
+      }
+      const s: any = {
+        strategy: 'edit' as const,
+        handle,
+        updates: [] as any[],
+        closedWith: undefined as any,
+        update(content: any) {
+          s.updates.push(content)
+          if (!opts?.resumeHandle && s.updates.length === 1) opts?.onOpen?.(handle)
+        },
+        async close(content: any) { s.closedWith = content; return { handle } },
+        async abort() { return true },
+      }
+      streams.push(s)
+      return s
+    },
+    send: async (content: any) => { sent.push(content); return {} as any },
+  }
+
+  // Turn 1 opens a card on first tool call, then host shuts down (`disposed: true`).
+  const turn1 = renderer.begin(activity([]), io)
+  turn1.update(activity([{ kind: 'tool', callId: 'c1', name: 'bash', args: '{}', status: 'running' }]), 'tool')
+  await settled()
+  assert.equal(streams.length, 1)
+  assert.equal(stored.get(SESSION)?.handle.parts[0].id, 'om_orig')
+
+  await turn1.end({ ...activity([{ kind: 'tool', callId: 'c1', name: 'bash', args: '{}', status: 'running' }], 'cancelled'), disposed: true })
+  assert.match(textOf(streams[0].closedWith), /重启/)
+  assert.equal(nodesOf(streams[0].closedWith).some(n => n.type === 'button'), false)
+  assert.equal(sent.length, 0)
+  // Handle is still persisted for the next process!
+  assert.equal(stored.get(SESSION)?.handle.parts[0].id, 'om_orig')
+
+  // Turn 2 after restart: even with `firstOutput: 'first-tool'`, immediately resumes on `om_orig`!
+  const turn2 = renderer.begin(activity([]), io)
+  await settled()
+  assert.equal(streams.length, 2)
+  assert.equal(openedOptions[1]?.resumeHandle?.parts[0]?.id, 'om_orig')
+  assert.equal(streams[1].updates.length, 1)
+
+  // Normal completion settles and clears the stored handle.
+  await turn2.end(activity([{ kind: 'text', text: '全部完成了' }], 'done'))
+  assert.equal(stored.has(SESSION), false)
+  assert.match(textOf(streams[1].closedWith), /全部完成了/)
+})
+
+test('abandon closes a lingering persisted card and clears the store', async () => {
+  const stored = new Map<string, { chat: ImChatKey; handle: any }>()
+  const handle = {
+    bot: 'lark:app',
+    target: { chat: { id: 'oc_1', type: 'group' } },
+    mode: 'card',
+    parts: [{ id: 'om_stuck', kind: 'card-inline', time: 1 }],
+    createdAt: 1,
+    edits: 0,
+    content: h('message'),
+  }
+  stored.set(SESSION, { chat: CHAT, handle })
+  const handleStore = {
+    get: (sid: SessionId, chat: ImChatKey) => stored.get(sid)?.chat === chat ? stored.get(sid)!.handle : undefined,
+    save: (sid: SessionId, chat: ImChatKey, value: any) => { stored.set(sid, { chat, handle: value }) },
+    clear: (sid: SessionId) => { stored.delete(sid) },
+  }
+  const renderer = new SummaryRenderer(config(), undefined, undefined, undefined, undefined, undefined, handleStore)
+  let closedText = ''
+  await renderer.abandon(SESSION, CHAT, async (_chat, resumeHandle) => {
+    assert.equal(resumeHandle.parts[0]?.id, 'om_stuck')
+    return {
+      async close(content: any) { closedText = textOf(content); return { handle: resumeHandle } },
+    } as any
+  })
+  assert.match(closedText, /多次重启中断/)
+  assert.equal(stored.has(SESSION), false)
+})

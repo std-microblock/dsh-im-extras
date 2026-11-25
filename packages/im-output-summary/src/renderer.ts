@@ -32,11 +32,12 @@
 import type { Child, Element, MessageHandle, MessageStream, StreamStrategy } from '@deepseek-ai/cordis-plugin-im-core'
 import { h } from '@deepseek-ai/cordis-plugin-im-core'
 import type {
-  ImActivity, ImActivityChange, ImOutputIO, ImOutputRenderer, ImTurnOutput,
+  ImActivity, ImActivityChange, ImChatKey, ImOutputIO, ImOutputRenderer, ImTurnOutput,
 } from '@deepseek-ai/dsh-im'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { SummaryConfig } from './config.ts'
 import type { ImStreamingMessage, StreamingPart } from './events.ts'
+import type { StreamHandleStore } from './handles.ts'
 import { stringsOf } from './locale.ts'
 import type { ProgressSource } from './progress.ts'
 import type { TurnCardService } from './cards.ts'
@@ -104,15 +105,38 @@ export class SummaryRenderer implements ImOutputRenderer {
     readonly cards?: () => TurnCardService | undefined,
     readonly compose?: MessageComposer,
     readonly hasAuth?: () => boolean,
+    readonly handles?: StreamHandleStore,
   ) {}
 
   begin(activity: ImActivity, io: ImOutputIO): ImTurnOutput {
     const sessionId = activity.session.sessionId
     const turn = new SummaryTurn(activity, io, this.config, () => {
       if (this.turns.get(sessionId) === turn) this.turns.delete(sessionId)
-    }, this.failures, this.config.progress ? this.progress : undefined, this.logger, this.cards?.(), this.compose, this.hasAuth)
+    }, this.failures, this.config.progress ? this.progress : undefined, this.logger, this.cards?.(), this.compose,
+    this.hasAuth, this.handles)
     this.turns.set(sessionId, turn)
     return turn
+  }
+
+  /**
+   * Close and clear a persisted stream card when auto-resume gives up on a session (e.g. crash loop limit reached),
+   * so the card never stays stuck on the "restarting" notice.
+   */
+  async abandon(
+    sessionId: SessionId,
+    chat: ImChatKey,
+    openStream: (chat: ImChatKey, resumeHandle: MessageHandle) => Promise<MessageStream>,
+  ): Promise<void> {
+    const handle = this.handles?.get(sessionId, chat)
+    this.handles?.clear(sessionId)
+    if (handle === undefined) return
+    try {
+      const stream = await openStream(chat, handle)
+      await stream.close(h('message', h('small', stringsOf(this.config.locale).resumeExhausted)))
+    } catch (error) {
+      this.logger?.warn('IM output summary could not close abandoned card for session %s: %s',
+        sessionId, error instanceof Error ? error.message : String(error))
+    }
   }
 
   /**
@@ -171,6 +195,8 @@ class SummaryTurn implements ImTurnOutput {
   private lastState: string | undefined
   /** Summary length at the last report: a new summary always logs, unchanged ones do not. */
   private lastSummaryChars = -1
+  /** Persisted message handle from a previous interrupted turn, reused to keep streaming in place. */
+  private readonly resumeHandle: MessageHandle | undefined
 
   constructor(
     activity: ImActivity,
@@ -185,8 +211,15 @@ class SummaryTurn implements ImTurnOutput {
     private readonly cardService?: TurnCardService,
     private readonly compose?: MessageComposer,
     private readonly hasAuth?: () => boolean,
+    private readonly handles?: StreamHandleStore,
   ) {
     this.latest = activity
+    this.resumeHandle = this.handles?.get(activity.session.sessionId, io.chat)
+    if (this.resumeHandle !== undefined) {
+      this.published = true
+      this.logger?.info('IM output summary resumes persisted card %s for session %s in %s',
+        this.resumeHandle.parts[0]?.id ?? '?', activity.session.sessionId, io.chat)
+    }
     // `immediate` opens the turn's message here, so the chat watches the work from the first second and a turn that
     // produces nothing to show stays recallable; `first-tool` waits for the first tool call (see `showing`).
     this.publish(activity)
@@ -202,13 +235,31 @@ class SummaryTurn implements ImTurnOutput {
     this.release()
     if (this.closed) return
     this.closed = true
+    const sessionId = activity.session.sessionId
     if (this.silent) {
       // A silenced turn leaves the chat as it found it: nothing is settled, no closing line is posted.
+      this.handles?.clear(sessionId)
       this.unwatch?.()
       this.plan?.cards?.dispose()
       return
     }
-    const sessionId = activity.session.sessionId
+    if (activity.disposed) {
+      // Graceful host shutdown/restart: keep the persisted handle so the next process resumes on this exact card,
+      // and switch the card to a neutral "restarting" notice without a stop button.
+      this.unwatch?.()
+      const stream = this.ready === undefined ? undefined : await this.ready
+      const plan = this.plan ?? this.resolveFinalPlan(activity)
+      plan.cards?.dispose()
+      if (this.published && stream !== undefined && plan.editing) {
+        if (stream.handle !== undefined) this.handles?.save(sessionId, this.io.chat, stream.handle)
+        const restarting = h('message', ...this.contribute('progress', activity, () => [
+          h('small', plan.strings.restarting),
+        ]))
+        await this.closeStream(stream, restarting, activity)
+      }
+      return
+    }
+    this.handles?.clear(sessionId)
     const failure = activity.status === 'error' && activity.error !== undefined ? failureOf(activity.error) : undefined
     const repeated = failure !== undefined && this.failures.get(sessionId) === failure
     if (failure === undefined) this.failures.delete(sessionId)
@@ -308,6 +359,7 @@ class SummaryTurn implements ImTurnOutput {
   async silence(): Promise<boolean> {
     if (this.silent) return this.withdrawn
     this.silent = true
+    this.handles?.clear(this.latest.session.sessionId)
     // A turn that has not published yet publishes nothing: there is no message to open and none to recall.
     const ready = this.ready
     if (ready === undefined) return false
@@ -379,7 +431,11 @@ class SummaryTurn implements ImTurnOutput {
    * @returns the stream, or `undefined` when the platform refused to open one (fallback: one plain send).
    */
   private open(activity: ImActivity): Promise<MessageStream | undefined> {
-    this.ready ??= this.io.stream({ intervalMs: this.config.intervalMs }).then(
+    this.ready ??= this.io.stream({
+      intervalMs: this.config.intervalMs,
+      ...this.resumeHandle === undefined ? {} : { resumeHandle: this.resumeHandle },
+      onOpen: (handle) => { this.handles?.save(activity.session.sessionId, this.io.chat, handle) },
+    }).then(
       (stream) => {
         this.plan = this.resolvePlan(activity, stream)
         return stream
@@ -398,7 +454,7 @@ class SummaryTurn implements ImTurnOutput {
    * @returns whether the message may be published.
    */
   private showing(activity: ImActivity): boolean {
-    if (this.ready !== undefined) return true
+    if (this.ready !== undefined || this.resumeHandle !== undefined) return true
     if (this.config.firstOutput === 'immediate') return true
     // The silencing call itself is not the work the message is waiting for.
     return activity.segments.some(segment => segment.kind === 'tool' && segment.name !== NO_OUTPUT_TOOL)

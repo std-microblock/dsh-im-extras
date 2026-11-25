@@ -36,7 +36,7 @@ export function initialize(data) {
       }
     }
   }
-  visit(join(root, 'vendor'), 1)
+  visit(join(root, 'vendor'), 2)
   visit(join(root, 'packages'), 2)
 }
 

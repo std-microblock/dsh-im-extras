@@ -29,6 +29,10 @@ export interface SummaryStrings {
   stop: string
   /** The stop instruction of a platform that renders no action button (the fallback of the stop control). */
   stopHint: string
+  /** Status line shown while the host is restarting and the card will resume in place. */
+  restarting: string
+  /** Status line shown when auto-resume gave up after repeated restarts. */
+  resumeExhausted: string
 }
 
 const zh: SummaryStrings = {
@@ -47,6 +51,8 @@ const zh: SummaryStrings = {
   stoppedAfter: ' 取消',
   stop: '停止',
   stopHint: '回复 /stop 停止',
+  restarting: '🔄 服务正在重启，稍后自动继续…',
+  resumeExhausted: '⚠️ 多次重启中断，自动恢复已停止，请手动发送消息继续',
 }
 
 const en: SummaryStrings = {
@@ -65,6 +71,8 @@ const en: SummaryStrings = {
   stoppedAfter: '',
   stop: 'Stop',
   stopHint: 'Reply /stop to stop',
+  restarting: '🔄 Service is restarting; resuming automatically…',
+  resumeExhausted: '⚠️ Interrupted across multiple restarts; auto-resume stopped, please send a message to continue',
 }
 
 const tables: Record<SummaryLocale, SummaryStrings> = { zh, en }

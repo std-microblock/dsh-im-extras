@@ -35,11 +35,16 @@
  * @module @deepseek-ai/dsh-im-output-summary
  */
 import type { Context } from '@deepseek-ai/cordis'
-import type {} from '@deepseek-ai/dsh-im'
+import type { ImChatKey } from '@deepseek-ai/dsh-im'
 import type {} from '@deepseek-ai/dsh-llm'
-import type {} from '@deepseek-ai/dsh-session'
+import type { SessionId } from '@deepseek-ai/dsh-session'
+import type {} from '@deepseek-ai/dsh-storage-domain'
 import type {} from '@deepseek-ai/dsh-tools'
 import type { SummaryConfig } from './config.ts'
+import {
+  deserializeHandle, imOutputSummaryDomain, PersistentStreamHandleStore, RESUME_HANDLE_MAX_AGE_MS,
+  serializeHandle, type ImOutputSummaryDomain, type StoredStreamHandle, type StreamHandleStore,
+} from './handles.ts'
 import { ProgressSummarizer } from './progress.ts'
 import type { TurnCardService } from './cards.ts'
 import { SummaryRenderer } from './renderer.ts'
@@ -47,6 +52,10 @@ import { applyNoOutputTool, GUIDANCE, GUIDANCE_ORDER, GUIDANCE_SECTION } from '.
 import { stopTargetOf } from './view.ts'
 
 export { Config, type Config as SummaryConfig, type FirstOutput, type SummaryLocale } from './config.ts'
+export {
+  deserializeHandle, imOutputSummaryDomain, PersistentStreamHandleStore, RESUME_HANDLE_MAX_AGE_MS,
+  serializeHandle, type ImOutputSummaryDomain, type StoredStreamHandle, type StreamHandleStore,
+}
 export { stringsOf, type SummaryStrings } from './locale.ts'
 export {
   PROGRESS_SUMMARY_TIMEOUT_CODE, ProgressSummarizer,
@@ -76,13 +85,28 @@ export const inject = ['im', 'llm', 'sessions']
 export function apply(ctx: Context, config: SummaryConfig): void {
   const progress = new ProgressSummarizer(ctx, config)
   progress.start()
+  const handles = new PersistentStreamHandleStore(ctx)
+  ctx.effect(async () => {
+    await handles.start()
+    return () => handles.dispose()
+  })
   // `imCards` (dsh-im-card) is optional: without it a card block stays a code block. The message itself is composed
   // through `im/streaming-message`, so whichever plugins know something about this turn can add it in place.
   const renderer = new SummaryRenderer(config, progress, ctx.logger,
     () => ctx.get('imCards') as TurnCardService | undefined,
     (message, next) => ctx.waterfall('im/streaming-message', message, next),
-    () => ctx.get('imAuth') !== undefined)
+    () => ctx.get('imAuth') !== undefined,
+    handles)
   ctx.effect(() => ctx.im.outputs.register(renderer))
+  // When an IM auto-resume plugin gives up after repeated restarts, close any lingering "restarting" card in place.
+  ctx.on('im/auto-resume-exhausted' as never, ((event: { sessionId: SessionId; chat?: ImChatKey }) => {
+    if (!event?.sessionId || !event.chat) {
+      if (event?.sessionId) handles.clear(event.sessionId)
+      return
+    }
+    void renderer.abandon(event.sessionId, event.chat, (chat, resumeHandle) =>
+      ctx.im.stream(chat, { session: event.sessionId, resumeHandle }))
+  }) as never)
   // The stop control belongs to this renderer: `summary:stop:<id>` (and `dsh:stop:<id>` on cards published while the
   // IM host still routed it) stops a session bound to the chat the button lives in. When `imAuth` is active, stop
   // controls carry `dsh:auth-stop:` so unauthorized group members cannot cancel an exclusive session. A turn somebody
