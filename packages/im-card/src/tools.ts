@@ -4,7 +4,8 @@
  * @module dsh-im-card/tools
  */
 import type { Context } from '@deepseek-ai/cordis'
-import { ImError, operationId, splitKey, type ImApi, type ImChatKey, type ImMessageKey } from '@deepseek-ai/dsh-im'
+import { ImError, type ImApi, type ImChatKey, type ImMessageKey } from '@deepseek-ai/dsh-im'
+import { operationId, splitKey } from './keys.ts'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import { defineTool, type ParameterSchemaSpec, type ToolRunContext, type ValueSchemaSpec } from '@deepseek-ai/dsh-tools'

@@ -43,10 +43,10 @@ import {
   directive, EXPRESSIVE_DIRECTIVE, h, INTERACTION_DROPPED, type Bot, type ChatRef, type Child, type Element, type MessageHandle,
   type RenderReport, type Target,
 } from '@deepseek-ai/cordis-plugin-im-core'
-import {
-  ImChatKey, ImMessageKey, splitKey,
-  type ImApi, type ImButtonEvent, type ImCheckEvent, type ImSelectEvent, type ImSendOptions, type ImSendResult,
+import type {
+  ImApi, ImButtonEvent, ImChatKey, ImCheckEvent, ImMessageKey, ImSelectEvent, ImSendOptions, ImSendResult,
 } from '@deepseek-ai/dsh-im'
+import { chatKey, messageKey, splitKey } from './keys.ts'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { CardBundle } from './bundle.ts'
 import { normalizePath } from './bundle.ts'
@@ -618,7 +618,7 @@ export class CardService {
     if (part === undefined) return
     this.handles.set(part.id, handle)
     const record: HostRecord = {
-      id: host, chat: ImChatKey(handle.bot, handle.target.chat.id), bot: handle.bot, message: part.id,
+      id: host, chat: chatKey(handle.bot, handle.target.chat.id), bot: handle.bot, message: part.id,
       content: JSON.parse(JSON.stringify(content)), cards, createdAt: Date.now(),
     }
     this.adopt(record, handle)
@@ -957,7 +957,7 @@ export class CardService {
       cardId: record.id,
       session: record.session as SessionId,
       chat: record.chat as ImChatKey,
-      ...(record.bot !== undefined && record.message !== undefined ? { message: ImMessageKey(record.bot, record.message) } : {}),
+      ...(record.bot !== undefined && record.message !== undefined ? { message: messageKey(record.bot, record.message) } : {}),
       ...(record.requester === undefined ? {} : { requester: record.requester }),
       ...(user === undefined ? {} : { user }),
       preview,

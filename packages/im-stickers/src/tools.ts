@@ -7,7 +7,8 @@
  */
 import type { Context } from '@deepseek-ai/cordis'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
-import { ImError, operationId, type ImApi, type ImChatKey, type ImSessionRecord } from '@deepseek-ai/dsh-im'
+import { ImError, type ImApi, type ImChatKey, type ImSessionRecord } from '@deepseek-ai/dsh-im'
+import { operationId } from './keys.ts'
 import { defineTool, type ParameterSchemaSpec, type ToolRunContext, type ValueSchemaSpec } from '@deepseek-ai/dsh-tools'
 import type { StickerHost } from './host.ts'
 import type { StickerLibrary } from './library.ts'

@@ -1,13 +1,18 @@
 /**
- * The runtime helpers of `@deepseek-ai/dsh-im` the dispatch strategy uses, re-exported with the plain-string keys this
- * package's structural types carry (the harness brands its keys; the values are the same strings).
+ * The identity helpers the dispatch strategy uses, in the plain-string shapes this package's structural types carry
+ * (the harness brands its keys; the values are the same strings).
+ *
+ * They used to be re-exports of `@deepseek-ai/dsh-im`, whose `feat/im-automation` entry exported `ImMessageKey`,
+ * `splitKey` and `operationId` as values. The mainline keeps that entry to type exports (`export type * from
+ * './api.ts'`) and builds its keys inside `api.ts`, so the three are mirrored here with the same contract —
+ * `${bot}|${id}`, split at the first `|` (a bot id never contains one), and the receipt id
+ * `sha256(sessionId + '\0' + toolCallId)`.
  *
  * @module dsh-im-dispatch/im
  */
 
-import {
-  ImError, ImMessageKey, operationId as imOperationId, splitKey as imSplitKey, type ImChatKey,
-} from '@deepseek-ai/dsh-im'
+import { createHash } from 'node:crypto'
+import { ImError } from '@deepseek-ai/dsh-im'
 
 export { ImError }
 
@@ -27,7 +32,8 @@ export function isImError(error: unknown): error is Error & { code: string } {
  * @returns the bot id (`''` for an unkeyed text) and the platform id.
  */
 export function splitKey(key: string): { bot: string; id: string } {
-  return imSplitKey(key as ImChatKey)
+  const at = key.indexOf('|')
+  return at < 0 ? { bot: '', id: key } : { bot: key.slice(0, at), id: key.slice(at + 1) }
 }
 
 /**
@@ -37,7 +43,7 @@ export function splitKey(key: string): { bot: string; id: string } {
  * @returns `${bot}|${message}`.
  */
 export function messageKey(bot: string, message: string): string {
-  return ImMessageKey(bot, message)
+  return `${bot}|${message}`
 }
 
 /**
@@ -47,5 +53,5 @@ export function messageKey(bot: string, message: string): string {
  * @returns the key the host's own tools mint for the same call.
  */
 export function operationId(sessionId: string, toolCallId: string): string {
-  return imOperationId(sessionId as Parameters<typeof imOperationId>[0], toolCallId)
+  return createHash('sha256').update(`${sessionId}\u0000${toolCallId}`).digest('hex')
 }

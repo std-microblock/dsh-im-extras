@@ -28,9 +28,11 @@ import { harnessRoot, repoRoot } from './harness-root.mjs'
  */
 const HARNESS_PEERS = {
   '@deepseek-ai/cordis': 'vendor/cordis/lib/types/index.d.ts',
-  '@deepseek-ai/cordis-plugin-im-core': 'vendor/plugin-im-core/lib/types/index.d.ts',
+  // The Satori-derived IM packages live under `vendor/im/` on the mainline (`vendor/plugin-im-*` and
+  // `vendor/satori-*` were the feat/im-automation layout).
+  '@deepseek-ai/cordis-plugin-im-core': 'vendor/im/core/lib/types/index.d.ts',
   '@deepseek-ai/schemastery': 'vendor/schemastery/lib/types/index.d.ts',
-  '@deepseek-ai/satori-element': 'vendor/satori-element/lib/types/index.d.ts',
+  '@deepseek-ai/satori-element': 'vendor/im/element/lib/types/index.d.ts',
 
   '@deepseek-ai/dsh-im': 'packages/experimental/im/lib/types/index.d.ts',
   '@deepseek-ai/dsh-im/src/api.ts': 'packages/experimental/im/lib/types/api.d.ts',
