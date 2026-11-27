@@ -114,6 +114,8 @@ export interface PublishedCard {
   id: string
   status: ImSendResult['status']
   message?: string
+  seq?: number
+  thread?: string
   error?: string
 }
 
@@ -438,7 +440,7 @@ export class CardService {
    */
   async publish(request: {
     bundle: CardBundle; props: unknown; session: SessionId; chat: ImChatKey; cwd?: string
-    quote?: ImMessageKey; thread?: string; operationId?: string
+    quote?: ImMessageKey; thread?: string | true; operationId?: string
     /** Who the card answers; defaults to the session's turn trigger sender, or the newest stored message of the chat. */
     requester?: { id: string; name?: string }
     /** `false` publishes without the session's write grant (the operator's test chat). */
@@ -477,7 +479,11 @@ export class CardService {
     this.save(live)
     return {
       id, status: result.status,
-      ...result.message === undefined ? {} : { message: result.message.key },
+      ...result.message === undefined ? {} : {
+        message: result.message.key,
+        seq: result.message.seq,
+        ...result.message.thread === undefined ? {} : { thread: result.message.thread.id },
+      },
       ...result.error === undefined ? {} : { error: result.error },
     }
   }

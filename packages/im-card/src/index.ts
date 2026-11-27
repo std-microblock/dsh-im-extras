@@ -26,7 +26,7 @@ import type {} from '@deepseek-ai/dsh-skill'
 import type {} from '@deepseek-ai/dsh-fs'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-working-directory'
-import { bundleCard, normalizePath, type CardFiles } from './bundle.ts'
+import { bundleCard, CardSourceError, normalizePath, type CardFiles } from './bundle.ts'
 import { Config, type CardsConfig } from './config.ts'
 import { GUIDANCE, GUIDANCE_ORDER, GUIDANCE_SECTION } from './guidance.ts'
 import { CardService } from './service.ts'
@@ -135,8 +135,9 @@ export class ImCardsService extends Service {
   }
 
   /**
-   * Compile an inline TSX card snippet (without local file imports) and publish it directly into a hosted session.
-   * Used by host plugins such as `dsh-im-session-auth` to post interactive preset cards (e.g. `<AuthRequest />`).
+   * Compile an inline TSX card snippet and publish it directly into a hosted session.
+   * Used by host plugins such as `dsh-im-session-auth` (trusted presets with `typecheck: false`) and automation hooks
+   * (`typecheck: true`, `rehearse: true`, `useSessionFiles: true`).
    */
   async publishInline(request: {
     source: string
@@ -144,26 +145,108 @@ export class ImCardsService extends Service {
     session: SessionId
     chat: ImChatKey
     quote?: ImMessageKey
-    thread?: string
+    thread?: string | true
     operationId?: string
     requester?: { id: string; name?: string }
     grant?: boolean
+    typecheck?: boolean
+    rehearse?: boolean
+    useSessionFiles?: boolean
   }): Promise<import('./service.ts').PublishedCard> {
     const emptyFiles: CardFiles = { read: async () => undefined }
+    const sessionFiles = request.useSessionFiles === true
+      ? await this.filesForSession(request.session).catch(() => undefined)
+      : undefined
     const bundle = await bundleCard(
-      { inline: request.source, cwd: '/' },
-      emptyFiles,
+      { inline: request.source, cwd: sessionFiles?.cwd ?? '/' },
+      sessionFiles?.files ?? emptyFiles,
       {
         maxModules: this.config.maxModules,
         maxBytes: this.config.maxSourceBytes,
-        typecheck: false,
+        typecheck: request.typecheck ?? false,
       },
     )
+    const props = request.props ?? {}
+    if (request.rehearse === true) {
+      await this.cards.rehearse({
+        bundle,
+        props,
+        chat: request.chat,
+        ...sessionFiles?.cwd === undefined ? {} : { cwd: sessionFiles.cwd },
+      })
+    }
     return await this.cards.publish({
       bundle,
-      props: request.props ?? {},
+      props,
       session: request.session,
       chat: request.chat,
+      ...sessionFiles?.cwd === undefined ? {} : { cwd: sessionFiles.cwd },
+      ...request.quote === undefined ? {} : { quote: request.quote },
+      ...request.thread === undefined ? {} : { thread: request.thread },
+      ...request.operationId === undefined ? {} : { operationId: request.operationId },
+      ...request.requester === undefined ? {} : { requester: request.requester },
+      ...request.grant === undefined ? {} : { grant: request.grant },
+    })
+  }
+
+  /**
+   * Compile a `.tsx` card file in the publishing session's working directory, rehearse it against the target chat,
+   * and publish it.
+   */
+  async publishFile(request: {
+    path: string
+    props?: unknown
+    session: SessionId
+    chat: ImChatKey
+    quote?: ImMessageKey
+    thread?: string | true
+    operationId?: string
+    requester?: { id: string; name?: string }
+    grant?: boolean
+    typecheck?: boolean
+  }): Promise<import('./service.ts').PublishedCard> {
+    const fs = this.home.get('fs') as Context['fs'] | undefined
+    const wd = this.home.get('workingDirectory') as Context['workingDirectory'] | undefined
+    if (fs === undefined || wd === undefined) {
+      throw new CardSourceError('cannot load a card file: filesystem or workingDirectory service is not mounted')
+    }
+    const agent = await this.agentForSession(request.session)
+    if (agent === undefined) {
+      throw new CardSourceError(`cannot load a card file: session "${request.session}" is not available`)
+    }
+    const cwd = await wd.ensure(agent)
+    const target = await fs.resolve(request.path, { cwd })
+    const root = await fs.resolve('.', { cwd })
+    const files: CardFiles = {
+      read: async (candidate) => {
+        try {
+          const file = await fs.resolve(candidate, { cwd })
+          const info = await fs.stat(file)
+          if (info?.type !== 'file') return undefined
+          return await fs.readText(file)
+        } catch {
+          return undefined
+        }
+      },
+    }
+    const bundle = await bundleCard(
+      { path: normalizePath(fs.processPath(target)) },
+      files,
+      {
+        maxModules: this.config.maxModules,
+        maxBytes: this.config.maxSourceBytes,
+        typecheck: request.typecheck ?? true,
+      },
+    )
+    const resolvedCwd = normalizePath(fs.processPath(root))
+    const props = request.props ?? {}
+    await this.cards.rehearse({ bundle, props, chat: request.chat, cwd: resolvedCwd })
+    return await this.cards.publish({
+      bundle,
+      props,
+      session: request.session,
+      chat: request.chat,
+      cwd: resolvedCwd,
       ...request.quote === undefined ? {} : { quote: request.quote },
       ...request.thread === undefined ? {} : { thread: request.thread },
       ...request.operationId === undefined ? {} : { operationId: request.operationId },
@@ -173,11 +256,17 @@ export class ImCardsService extends Service {
   }
 
   /** The working directory and file reader of a turn's session, when the deployment has a filesystem. */
-  private async filesFor(activity: ImActivity): Promise<{ files: CardFiles; cwd: string } | undefined> {
+  private filesFor(activity: ImActivity): Promise<{ files: CardFiles; cwd: string } | undefined> {
+    return this.filesForSession(activity.session.sessionId)
+  }
+
+  /** The working directory and file reader of a hosted session, when the deployment has a filesystem. */
+  private async filesForSession(sessionId: SessionId): Promise<{ files: CardFiles; cwd: string } | undefined> {
     const fs = this.home.get('fs') as Context['fs'] | undefined
     const wd = this.home.get('workingDirectory') as Context['workingDirectory'] | undefined
     if (fs === undefined || wd === undefined) return undefined
-    const agent = await this.im.sessions.agent(activity.session.sessionId)
+    const agent = await this.agentForSession(sessionId)
+    if (agent === undefined) return undefined
     const cwd = await wd.ensure(agent)
     const cwdTarget = await fs.resolve('.', { cwd })
     return {
@@ -194,6 +283,16 @@ export class ImCardsService extends Service {
           }
         },
       },
+    }
+  }
+
+  /** Resolve one session's agent from the IM host or the live agent registry. */
+  private async agentForSession(sessionId: SessionId): Promise<Awaited<ReturnType<ImApi['sessions']['agent']>> | undefined> {
+    try {
+      return await this.im.sessions.agent(sessionId)
+    } catch {
+      const agents = this.home.get('agents') as { get?(id: SessionId): Awaited<ReturnType<ImApi['sessions']['agent']>> | undefined } | undefined
+      return agents?.get?.(sessionId)
     }
   }
 }
