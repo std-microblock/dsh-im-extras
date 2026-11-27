@@ -526,8 +526,7 @@ export class ImUserNamesHost {
   }
 
   private async runChatRosterSync(chatKey: ImChatKey, timeoutMs: number): Promise<boolean> {
-    const membersFn = this.im.members
-    if (membersFn === undefined) return false
+    if (this.im.members === undefined) return false
     const botId = splitKey(chatKey).bot
     if (!botId) return false
 
@@ -539,7 +538,7 @@ export class ImUserNamesHost {
       let cursor: string | undefined
       for (let pageIndex = 0; pageIndex < this.config.maxMemberPages; pageIndex++) {
         if (controller.signal.aborted || this.disposed) break
-        const page = await membersFn(chatKey, cursor, MEMBERS_PAGE_SIZE, controller.signal)
+        const page = await this.im.members!(chatKey, cursor, MEMBERS_PAGE_SIZE, controller.signal)
         const timestamp = this.now()
         for (const member of page.data) {
           const id = member.id?.trim()

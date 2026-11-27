@@ -644,3 +644,34 @@ test('Cordis integration: ImUserNamesService mounts via Service.init, prepends i
   await fork.dispose()
 })
 
+test('preserves `this` binding when calling class-method im.members()', async () => {
+  const bot = makeBot()
+  class ClassImHost implements ImHostLike {
+    readonly history = {
+      get: () => undefined,
+      before: () => [],
+    }
+    bot(_chat: ImChatKey): Bot {
+      return bot
+    }
+    async members(chat: ImChatKey): Promise<MembersPage> {
+      // Mirrors ImService.members() in dsh-im which calls `this.bot(chat)`.
+      assert.equal(this.bot(chat), bot)
+      return { data: [{ id: 'ou_bound', name: '周八' }] }
+    }
+  }
+
+  const mem = makeMemoryStorage()
+  const host = new ImUserNamesHost({
+    im: new ClassImHost(),
+    storage: mem.storage,
+    logger: makeLogger(),
+    config: makeConfig(),
+  })
+  await host.open()
+  const msg = makeMessage({ id: 'om_bound_1', seq: 1, senderId: 'ou_bound' })
+  await host.handleMessage(makeEvent(msg, bot), async () => okOutcome)
+  assert.equal(msg.sender.name, '周八(ou_bound)')
+  await host.dispose()
+})
+
