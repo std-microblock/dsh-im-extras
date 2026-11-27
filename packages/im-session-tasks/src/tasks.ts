@@ -226,6 +226,35 @@ export class ImTaskHost implements ImTasks {
   }
 
   /**
+   * Rebind a task's worker session to new IM bindings (for example moving it to another chat or thread) and update
+   * its stored home chat accordingly.
+   * @param worker - the worker session id or key.
+   * @param bindings - complete replacement bindings for the worker; must contain at least one chat.
+   * @returns the updated task record.
+   */
+  async relocate(worker: SessionId | string, bindings: ImBinding[]): Promise<ImTask> {
+    return await this.serial(async () => {
+      const task = this.workerTask(worker, 'Only a task worker can be relocated.')
+      const home = bindings.find(entry => entry.home === true && entry.writable)
+        ?? bindings.find(entry => entry.home === true)
+        ?? bindings.find(entry => entry.writable)
+        ?? bindings[0]
+      if (home === undefined) {
+        throw new ImError('configuration', 'Relocating a task requires at least one chat binding.')
+      }
+      await this.im.sessions.bind(task.session, bindings)
+      const updated: TaskRecord = {
+        ...task,
+        chat: home.chat,
+        updatedAt: Date.now(),
+      }
+      await this.save(updated)
+      this.ctx.emit('im/task/updated', updated)
+      return updated
+    })
+  }
+
+  /**
    * Hand messages over to a task's worker, once per message key.
    * @param id - the task number.
    * @param messages - the messages to hand over.

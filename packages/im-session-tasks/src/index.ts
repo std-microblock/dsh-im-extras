@@ -10,7 +10,7 @@
  */
 import { Service, type Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-storage-domain'
-import type { ImApi, ImMessage } from '@deepseek-ai/dsh-im'
+import type { ImApi, ImBinding, ImMessage } from '@deepseek-ai/dsh-im'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type {
   ImTask, ImTaskDelivery, ImTaskDescribe, ImTaskFilter, ImTaskPlacer, ImTaskStart, ImTasks, SessionTasksConfig,
@@ -117,6 +117,16 @@ export class ImTasksService extends Service implements ImTasks {
    */
   describe(worker: SessionId | string, profile: ImTaskDescribe): Promise<ImTask> {
     return this.host.describe(worker, profile)
+  }
+
+  /**
+   * Move a task worker to new IM bindings and update its home chat.
+   * @param worker - the worker session id or key.
+   * @param bindings - replacement IM bindings for the worker.
+   * @returns the updated task.
+   */
+  relocate(worker: SessionId | string, bindings: ImBinding[]): Promise<ImTask> {
+    return this.host.relocate(worker, bindings)
   }
 
   /**

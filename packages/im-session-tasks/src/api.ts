@@ -141,6 +141,8 @@ export interface ImTasks {
   note(worker: SessionId | string, note: string): Promise<ImTask>
   /** Update the worker's self-profile without injecting a notice into owner sessions. */
   describe(worker: SessionId | string, profile: ImTaskDescribe): Promise<ImTask>
+  /** Move a task's worker to new IM bindings and update its home chat. */
+  relocate(worker: SessionId | string, bindings: ImBinding[]): Promise<ImTask>
   /** Deliver messages to a task's worker as follow-ups, once per message key, presented with `options.header`. */
   deliver(id: number, messages: readonly ImMessage[], options?: ImTaskDelivery): Promise<ImTask>
   /** Register the placer of one owner name; returns its disposer. */

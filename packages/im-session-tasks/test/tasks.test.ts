@@ -84,6 +84,13 @@ function makeHarness(configPatch: Partial<SessionTasksConfig> = {}) {
         deliveries.push({ session: id, mode: item.mode, id: item.id })
         return { accepted: true }
       },
+      bind: async (target: SessionId | string, bindings: ImBinding[]) => {
+        const current = sessions.get(target) ?? byKey.get(target)
+        if (current === undefined) throw new ImError('access', `No session ${target}`)
+        const updated: ImSessionRecord = { ...current, bindings }
+        sessions.set(updated.sessionId, updated)
+        byKey.set(updated.key, updated)
+      },
       trigger: () => undefined,
     },
     format: async () => [{ type: 'text' as const, text: 'formatted' }],
@@ -271,6 +278,43 @@ describe('ImTaskHost describe & shared router ownership', () => {
     await assert.rejects(
       () => env.host.message(routerB.sessionId, convTask.id, 'steal conv'),
       (error: unknown) => error instanceof ImError && error.code === 'access',
+    )
+  })
+
+  it('relocate() rebinds the worker session and updates task.chat', async () => {
+    const env = makeHarness()
+    await env.open()
+    const router = await env.im.sessions.ensure({
+      key: 'dispatch:chat:c1',
+      owner: 'dispatch',
+      composition: COMP,
+      bindings: [{ chat: 'c1' as ImChatKey, writable: false, home: true }],
+    })
+    const task = await env.host.start({
+      owner: router.sessionId,
+      title: 'Incident #42',
+      brief: 'Check c1',
+      placement: { bindings: [{ chat: 'c1' as ImChatKey, writable: true, home: true, thread: 'om_1' }] },
+    })
+    assert.equal(task.chat, 'c1')
+
+    const relocated = await env.host.relocate(task.session, [
+      { chat: 'c1' as ImChatKey, writable: false },
+      { chat: 'c2' as ImChatKey, writable: false },
+      { chat: 'c2' as ImChatKey, writable: true, home: true, thread: 'om_2' },
+    ])
+    assert.equal(relocated.chat, 'c2')
+    assert.equal(env.host.of(task.session)?.chat, 'c2')
+    assert.deepEqual(env.sessions.get(task.session)?.bindings, [
+      { chat: 'c1' as ImChatKey, writable: false },
+      { chat: 'c2' as ImChatKey, writable: false },
+      { chat: 'c2' as ImChatKey, writable: true, home: true, thread: 'om_2' },
+    ])
+    assert.equal(env.emitted.filter(entry => entry.event === 'im/task/updated').length, 1)
+
+    await assert.rejects(
+      () => env.host.relocate(task.session, []),
+      (error: unknown) => error instanceof ImError && error.code === 'configuration',
     )
   })
 })
