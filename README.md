@@ -19,6 +19,7 @@ services, so a bot mounts the ones it wants.
 | [`im-stickers`](packages/im-stickers/README.md) | `dsh-im-stickers` | Sticker library: upload or collect chat images, vision tagging, weighted pick with recent-use decay, `send_sticker` / `sticker_search`, and an optional sticker after the bot finishes talking. |
 | [`im-qq-panel`](packages/im-qq-panel/README.md) | `dsh-im-qq-panel` | QQ official bot custom menu and command panels: configured sync (read first, write only differences, rate-limit stop), panels generated from the session commands and `/skill` commands, admin commands, the group-owner authorization command `/授权全消息`, and a panel tab. Service: `ctx.qqPanel`. |
 | [`im-panel`](packages/im-panel/README.md) | `dsh-im-panel` | Operator panel inside the harness web GUI: overview, sessions, tasks, route rules, chat modes, chronicle — plus a tab API (`ctx.imPanel.tab(...)`) the other plugins use for their own tabs. |
+| [`im-user-names`](packages/im-user-names/README.md) | `dsh-im-user-names` | Resolve and cache IM user display names (e.g. Feishu `open_id` → `Name(open_id)`) across inbound messages, quotes, reactions, and card interactions via mentions, `ctx.im.members` roster sync, optional contact fallback, and static aliases. Service: `ctx.imUserNames`. |
 
 ## Status
 
